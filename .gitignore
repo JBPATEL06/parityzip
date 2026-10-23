@@ -12,6 +12,7 @@
 .swiftpm/
 migrate_working_dir/
 devtools_options.yaml
+demo/
 
 # IntelliJ related
 *.iml
