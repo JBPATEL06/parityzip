@@ -7,6 +7,7 @@ import 'core/process_runner.dart';
 import 'core/tool_locator.dart';
 import 'state/job_controller.dart';
 import 'state/log_controller.dart';
+import 'state/navigation_controller.dart';
 import 'ui/protect_page.dart';
 import 'ui/repair_page.dart';
 import 'ui/verify_page.dart';
@@ -36,6 +37,9 @@ class ParityZipApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider<LogController>(
           create: (_) => logController ?? LogController(),
+        ),
+        ChangeNotifierProvider<AppNavigationController>(
+          create: (_) => AppNavigationController(),
         ),
         Provider<ToolStatus>.value(value: toolStatus),
         Provider<ProcessRunner>.value(value: runner),
@@ -68,34 +72,60 @@ class ParityZipApp extends StatelessWidget {
   }
 }
 
-class AppShell extends StatelessWidget {
+class AppShell extends StatefulWidget {
   const AppShell({super.key});
 
   @override
+  State<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends State<AppShell>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final nav = context.read<AppNavigationController>();
+    nav.attachTabController(_tabController);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('ParityZip'),
-          bottom: const TabBar(
-            tabs: [
-              Tab(text: 'Protect'),
-              Tab(text: 'Verify'),
-              Tab(text: 'Repair'),
-            ],
-          ),
-        ),
-        body: Column(
-          children: const [
-            ToolBanner(),
-            Expanded(
-              child: TabBarView(
-                children: [ProtectPage(), VerifyPage(), RepairPage()],
-              ),
-            ),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('ParityZip'),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: 'Protect'),
+            Tab(text: 'Verify'),
+            Tab(text: 'Repair'),
           ],
         ),
+      ),
+      body: Column(
+        children: [
+          const ToolBanner(),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: const [ProtectPage(), VerifyPage(), RepairPage()],
+            ),
+          ),
+        ],
       ),
     );
   }

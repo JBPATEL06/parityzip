@@ -1,9 +1,12 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:parityzip/app.dart';
 import 'package:parityzip/core/models.dart';
 import 'package:parityzip/core/process_runner.dart';
 import 'package:parityzip/core/tool_locator.dart';
+import 'package:parityzip/state/job_controller.dart';
 import 'package:parityzip/state/log_controller.dart';
 import 'package:parityzip/ui/widgets/log_panel.dart';
 import 'package:parityzip/ui/widgets/tool_banner.dart';
@@ -143,12 +146,15 @@ void main() {
       // Tap "Verify" tab
       await tester.tap(find.text('Verify'));
       await tester.pumpAndSettle();
-      expect(find.text('Coming in M4'), findsOneWidget);
+      expect(find.text('Drag & drop a .par2 file here'), findsOneWidget);
+      expect(find.text('Choose .par2 file'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, 'Verify'), findsOneWidget);
 
       // Tap "Repair" tab
       await tester.tap(find.text('Repair'));
       await tester.pumpAndSettle();
-      expect(find.text('Coming in M4'), findsOneWidget);
+      expect(find.text('Drag & drop a .par2 file to repair'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, 'Repair'), findsOneWidget);
     });
 
     testWidgets(
@@ -296,5 +302,124 @@ void main() {
       expect(find.byType(Slider), findsOneWidget);
       expect(find.text('Redundancy: 10%'), findsOneWidget);
     });
+
+    testWidgets('when par2 is missing, Verify and Repair tabs are disabled', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1280, 1000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final mockBinaries = {'/usr/bin/7z'};
+      final locator = ToolLocator(
+        pathEnv: '/usr/bin',
+        isExecutableFile: (path) => mockBinaries.contains(path),
+      );
+
+      await tester.pumpWidget(
+        ParityZipApp(toolLocator: locator, processRunner: FakeProcessRunner()),
+      );
+      await tester.pumpAndSettle();
+
+      // Check Verify Tab
+      await tester.tap(find.text('Verify'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('par2 tool is missing from PATH. Verification is disabled.'),
+        findsOneWidget,
+      );
+      final verifyButton = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Verify'),
+      );
+      expect(verifyButton.onPressed, isNull);
+
+      // Check Repair Tab
+      await tester.tap(find.text('Repair'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('par2 tool is missing from PATH. Repair is disabled.'),
+        findsOneWidget,
+      );
+      final repairButton = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Repair'),
+      );
+      expect(repairButton.onPressed, isNull);
+    });
+
+    testWidgets(
+      'Go to Repair button switches to Repair tab with preselected file',
+      (tester) async {
+        tester.view.physicalSize = const Size(1280, 1000);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final mockBinaries = {'/usr/bin/7z', '/usr/bin/par2'};
+        final locator = ToolLocator(
+          pathEnv: '/usr/bin',
+          isExecutableFile: (path) => mockBinaries.contains(path),
+        );
+
+        final logController = LogController();
+        final fakeRunner = FakeProcessRunner(
+          onRun: (exe, args, workingDirectory, stdinData) {
+            return Stream.fromIterable([
+              const StdoutEvent(
+                'Target: "damaged.7z" - damaged. Found 1999 of 2000 data blocks.\nRepair is possible.\n',
+              ),
+              const ExitCodeEvent(1),
+            ]);
+          },
+        );
+
+        final jobController = JobController(
+          processRunner: fakeRunner,
+          logController: logController,
+        );
+
+        await tester.pumpWidget(
+          ParityZipApp(
+            toolLocator: locator,
+            processRunner: fakeRunner,
+            logController: logController,
+            jobController: jobController,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Switch to Verify tab
+        await tester.tap(find.text('Verify'));
+        await tester.pumpAndSettle();
+
+        final tempDir = Directory.systemTemp.createTempSync('par2_ui_test');
+        addTearDown(() {
+          try {
+            tempDir.deleteSync(recursive: true);
+          } catch (_) {}
+        });
+        final par2File = File('${tempDir.path}/damaged.7z.par2')
+          ..writeAsStringSync('dummy');
+
+        // Simulate a run on damaged file
+        await jobController.startVerifyJob(
+          par2Exe: 'par2',
+          par2FilePath: par2File.path,
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Archive is damaged but repairable'), findsOneWidget);
+        expect(find.text('Go to Repair'), findsOneWidget);
+
+        // Tap "Go to Repair"
+        await tester.tap(find.text('Go to Repair'));
+        await tester.pumpAndSettle();
+
+        // Should now be on Repair tab with the file preselected!
+        expect(find.text('Drag & drop a .par2 file to repair'), findsOneWidget);
+        expect(find.text('damaged.7z.par2'), findsOneWidget);
+        expect(find.text('Full path: ${par2File.path}'), findsOneWidget);
+      },
+    );
   });
 }
