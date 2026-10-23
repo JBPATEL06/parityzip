@@ -64,25 +64,49 @@ class _ProtectPageState extends State<ProtectPage> {
   }
 
   Future<void> _pickFiles() async {
-    final files = await openFiles();
-    if (files.isNotEmpty) {
-      _addPaths(files.map((f) => f.path).toList());
+    try {
+      final files = await openFiles();
+      if (files.isNotEmpty) {
+        _addPaths(files.map((f) => f.path).toList());
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to open file picker: $e')),
+        );
+      }
     }
   }
 
   Future<void> _pickFolder() async {
-    final folder = await getDirectoryPath();
-    if (folder != null) {
-      _addPaths([folder]);
+    try {
+      final folder = await getDirectoryPath();
+      if (folder != null) {
+        _addPaths([folder]);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to open folder picker: $e')),
+        );
+      }
     }
   }
 
   Future<void> _pickOutputFolder() async {
-    final folder = await getDirectoryPath(initialDirectory: _outputDirectory);
-    if (folder != null) {
-      setState(() {
-        _outputDirectory = folder;
-      });
+    try {
+      final folder = await getDirectoryPath(initialDirectory: _outputDirectory);
+      if (folder != null) {
+        setState(() {
+          _outputDirectory = folder;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to open folder picker: $e')),
+        );
+      }
     }
   }
 
