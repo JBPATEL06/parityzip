@@ -300,7 +300,16 @@ class _ProtectPageState extends State<ProtectPage> {
       archiveName: _nameController.text,
     );
 
-    final validation = selection.validate();
+    final activeOutputPath = isRunning ? jobController.createdOutputFile : null;
+
+    final validation = selection.validate(
+      checkFileExists: (path) {
+        if (activeOutputPath != null && path == activeOutputPath) {
+          return false;
+        }
+        return File(path).existsSync();
+      },
+    );
     final has7z = toolStatus.sevenZip.isFound;
 
     final lastSuccessPath = jobController.lastResult?.isSuccess == true
@@ -627,7 +636,7 @@ class _ProtectPageState extends State<ProtectPage> {
                 style: TextStyle(color: colorScheme.error, fontSize: 13),
               ),
             ),
-          ] else if (isOutputFromCurrentJob) ...[
+          ] else if (!isRunning && isOutputFromCurrentJob) ...[
             Container(
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -661,7 +670,9 @@ class _ProtectPageState extends State<ProtectPage> {
                 ],
               ),
             ),
-          ] else if (!validation.isValid && _selectedPaths.isNotEmpty) ...[
+          ] else if (!isRunning &&
+              !validation.isValid &&
+              _selectedPaths.isNotEmpty) ...[
             Container(
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -682,14 +693,24 @@ class _ProtectPageState extends State<ProtectPage> {
                       style: TextStyle(color: colorScheme.error, fontSize: 13),
                     ),
                   ),
-                  if (validation.errorMessage!.contains('parent folder')) ...[
+                  if (validation.errorMessage!.contains('already exists')) ...[
+                    const SizedBox(width: 8),
+                    TextButton.icon(
+                      icon: const Icon(
+                        Icons.drive_file_rename_outline,
+                        size: 16,
+                      ),
+                      label: const Text('Suggest name'),
+                      onPressed: _suggestNextName,
+                    ),
+                  ] else if (validation.errorMessage!.contains(
+                    'parent folder',
+                  )) ...[
                     const SizedBox(width: 8),
                     TextButton.icon(
                       icon: const Icon(Icons.clear_all, size: 16),
                       label: const Text('Clear list'),
-                      onPressed: isRunning
-                          ? null
-                          : () => setState(() => _selectedPaths.clear()),
+                      onPressed: () => setState(() => _selectedPaths.clear()),
                     ),
                   ],
                 ],

@@ -97,9 +97,11 @@ class JobController extends ChangeNotifier {
   JobResult? _lastResult;
   JobResult? get lastResult => _lastResult;
 
+  String? _createdOutputFile;
+  String? get createdOutputFile => _createdOutputFile;
+
   StreamSubscription<ProcessEvent>? _subscription;
   Completer<void>? _activeCompleter;
-  String? _createdOutputFile;
   bool _cancelled = false;
 
   void clearStatus() {

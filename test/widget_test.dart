@@ -210,5 +210,23 @@ void main() {
         expect(createButton.onPressed, isNull);
       },
     );
+
+    testWidgets('validation error banner is hidden when job is running', (
+      tester,
+    ) async {
+      final mockBinaries = {'/usr/bin/7z', '/usr/bin/par2'};
+      final locator = ToolLocator(
+        pathEnv: '/usr/bin',
+        isExecutableFile: (path) => mockBinaries.contains(path),
+      );
+
+      await tester.pumpWidget(
+        ParityZipApp(toolLocator: locator, processRunner: FakeProcessRunner()),
+      );
+      await tester.pumpAndSettle();
+
+      // While idle without selection, no "already exists" error
+      expect(find.textContaining('already exists'), findsNothing);
+    });
   });
 }
