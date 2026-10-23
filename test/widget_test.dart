@@ -421,5 +421,54 @@ void main() {
         expect(find.text('Full path: ${par2File.path}'), findsOneWidget);
       },
     );
+
+    testWidgets(
+      'Format selector toggles between 7z and ZIP and updates suffix and hint text',
+      (tester) async {
+        final locator = ToolLocator(
+          pathEnv: '/mock/bin',
+          isExecutableFile: (p) => true,
+        );
+        final fakeRunner = FakeProcessRunner();
+        final logController = LogController();
+        final jobController = JobController(
+          processRunner: fakeRunner,
+          logController: logController,
+        );
+
+        await tester.pumpWidget(
+          ParityZipApp(
+            toolLocator: locator,
+            processRunner: fakeRunner,
+            logController: logController,
+            jobController: jobController,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // 7z is selected by default
+        expect(find.text('.7z'), findsOneWidget);
+        expect(
+          find.text(
+            'ZIP opens on Windows and macOS without extra software. 7z compresses better but needs a tool on macOS and older Windows.',
+          ),
+          findsOneWidget,
+        );
+
+        // Tap ZIP
+        await tester.tap(find.text('ZIP'));
+        await tester.pumpAndSettle();
+
+        // Suffix updates to .zip
+        expect(find.text('.zip'), findsOneWidget);
+
+        // Tap 7z
+        await tester.tap(find.text('7z'));
+        await tester.pumpAndSettle();
+
+        // Suffix updates back to .7z
+        expect(find.text('.7z'), findsOneWidget);
+      },
+    );
   });
 }

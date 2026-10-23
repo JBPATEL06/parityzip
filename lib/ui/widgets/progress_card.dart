@@ -140,6 +140,8 @@ class ProgressCard extends StatelessWidget {
                 const SizedBox(height: 8),
                 SelectableText('File: $path'),
                 const SizedBox(height: 4),
+                Text('Format: ${result.format.label}'),
+                const SizedBox(height: 4),
                 Text('Size: $sizeText'),
                 if (result.par2Summary != null) ...[
                   const SizedBox(height: 6),

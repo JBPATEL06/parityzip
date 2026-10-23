@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import '../core/input_selection.dart';
+import '../core/models.dart';
 import '../core/process_runner.dart';
 import '../services/par2_service.dart';
 import '../services/sevenzip_service.dart';
@@ -24,8 +25,10 @@ class JobResult {
   final Par2Summary? par2Summary;
   final bool? par2Verified;
   final String? recoveryNote;
+  final ArchiveFormat format;
 
   const JobResult.success({
+    this.format = ArchiveFormat.sevenZip,
     required this.outputPath,
     required this.outputSizeBytes,
     this.warnings = const [],
@@ -38,6 +41,7 @@ class JobResult {
        errorMessage = null;
 
   const JobResult.successWithWarnings({
+    this.format = ArchiveFormat.sevenZip,
     required this.outputPath,
     required this.outputSizeBytes,
     required this.warnings,
@@ -50,6 +54,7 @@ class JobResult {
        errorMessage = null;
 
   const JobResult.failure({
+    this.format = ArchiveFormat.sevenZip,
     required this.exitCode,
     required this.errorMessage,
     this.outputPath,
@@ -168,17 +173,19 @@ class JobController extends ChangeNotifier {
     required String exe,
     required InputValidation validation,
     required CompressionLevel level,
+    ArchiveFormat format = ArchiveFormat.sevenZip,
   }) async {
     return startProtectionPipeline(
       sevenZipExe: exe,
       validation: validation,
       level: level,
+      format: format,
       createRecoveryData: false,
     );
   }
 
   /// Full Protection Pipeline:
-  /// Step 1: Compress with 7z
+  /// Step 1: Compress with 7z (or ZIP)
   /// Step 2: Create recovery data with par2 (if enabled)
   /// Step 3: Verify recovery data with par2 (if enabled)
   Future<void> startProtectionPipeline({
@@ -186,6 +193,7 @@ class JobController extends ChangeNotifier {
     String? par2Exe,
     required InputValidation validation,
     required CompressionLevel level,
+    ArchiveFormat format = ArchiveFormat.sevenZip,
     required bool createRecoveryData,
     int redundancy = 10,
   }) async {
@@ -194,6 +202,7 @@ class JobController extends ChangeNotifier {
     if (!validation.isValid) {
       _status = JobStatus.failure;
       _lastResult = JobResult.failure(
+        format: format,
         exitCode: -1,
         errorMessage: validation.errorMessage ?? 'Invalid input configuration.',
       );
@@ -229,6 +238,7 @@ class JobController extends ChangeNotifier {
     // STEP 1: Compress
     // ==========================================
     final sevenZipArgs = SevenZipService.buildCreateArgs(
+      format: format,
       level: level,
       outputFileName: outputPath,
       names: names,
@@ -266,6 +276,7 @@ class JobController extends ChangeNotifier {
       _progress = null;
       _statusMessage = 'Compression failed (exit code $step1ExitCode).';
       _lastResult = JobResult.failure(
+        format: format,
         exitCode: step1ExitCode,
         errorMessage:
             '7-Zip failed with exit code $step1ExitCode. Please check the log below for details.',
@@ -290,6 +301,7 @@ class JobController extends ChangeNotifier {
     // If recovery data is not requested, finish now
     if (!shouldCreatePar2) {
       _finishSuccess(
+        format: format,
         outputPath: outputPath,
         outputSizeBytes: archiveSize,
         warnings: warnings,
@@ -344,6 +356,7 @@ class JobController extends ChangeNotifier {
       _progress = null;
       _statusMessage = 'Recovery data creation failed.';
       _lastResult = JobResult.failure(
+        format: format,
         exitCode: step2ExitCode,
         errorMessage:
             'PAR2 create failed (exit code $step2ExitCode): ${par2Error.errorMessage}\nThe archive was kept at $outputPath.',
@@ -406,6 +419,7 @@ class JobController extends ChangeNotifier {
         '>>> WARNING: PAR2 verification post-check returned exit code $step3ExitCode. All files kept.',
       );
       _finishSuccess(
+        format: format,
         outputPath: outputPath,
         outputSizeBytes: archiveSize,
         warnings: warnings,
@@ -421,6 +435,7 @@ class JobController extends ChangeNotifier {
     );
 
     _finishSuccess(
+      format: format,
       outputPath: outputPath,
       outputSizeBytes: archiveSize,
       warnings: warnings,
@@ -834,6 +849,7 @@ class JobController extends ChangeNotifier {
   }
 
   void _finishSuccess({
+    ArchiveFormat format = ArchiveFormat.sevenZip,
     required String outputPath,
     required int outputSizeBytes,
     required List<String> warnings,
@@ -847,6 +863,7 @@ class JobController extends ChangeNotifier {
 
     if (warnings.isNotEmpty) {
       _lastResult = JobResult.successWithWarnings(
+        format: format,
         outputPath: outputPath,
         outputSizeBytes: outputSizeBytes,
         warnings: warnings,
@@ -856,6 +873,7 @@ class JobController extends ChangeNotifier {
       );
     } else {
       _lastResult = JobResult.success(
+        format: format,
         outputPath: outputPath,
         outputSizeBytes: outputSizeBytes,
         warnings: warnings,

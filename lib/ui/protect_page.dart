@@ -6,6 +6,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/compatibility_checker.dart';
 import '../core/input_selection.dart';
 import '../core/models.dart';
 import '../services/par2_service.dart';
@@ -45,10 +46,12 @@ class _ProtectPageState extends State<ProtectPage> {
   final TextEditingController _nameController = TextEditingController(
     text: 'archive',
   );
+  ArchiveFormat _format = ArchiveFormat.sevenZip;
   CompressionLevel _compressionLevel = CompressionLevel.normal;
   bool _createRecoveryData = true;
   double _redundancy = 10.0;
   bool _isDragging = false;
+  bool _isScanning = false;
   JobStatus? _lastStatus;
   FeedbackMessage? _topFeedback;
   Timer? _feedbackTimer;
@@ -182,9 +185,12 @@ class _ProtectPageState extends State<ProtectPage> {
 
   void _suggestNextName() {
     final current = _nameController.text.trim();
-    final clean = current.endsWith('.7z')
-        ? current.substring(0, current.length - 3)
-        : current;
+    var clean = current;
+    if (clean.toLowerCase().endsWith('.7z')) {
+      clean = clean.substring(0, clean.length - 3);
+    } else if (clean.toLowerCase().endsWith('.zip')) {
+      clean = clean.substring(0, clean.length - 4);
+    }
     final match = RegExp(r'^(.*?)(?:_(\d+))?$').firstMatch(clean);
     if (match != null) {
       final prefix = match.group(1) ?? 'archive';
@@ -195,6 +201,160 @@ class _ProtectPageState extends State<ProtectPage> {
       _nameController.text = '${clean}_1';
     }
     setState(() {});
+  }
+
+  void _onFormatChanged(ArchiveFormat newFormat) {
+    if (_format == newFormat) return;
+    setState(() {
+      _format = newFormat;
+      final current = _nameController.text.trim();
+      _nameController.text = InputSelection.changeExtension(current, newFormat);
+    });
+  }
+
+  Future<void> _handleCreateArchive({
+    required JobController jobController,
+    required ToolStatus toolStatus,
+    required InputValidation validation,
+    required bool hasPar2,
+  }) async {
+    if (_format == ArchiveFormat.zip) {
+      setState(() {
+        _isScanning = true;
+      });
+      try {
+        final scanner = const CompatibilityScanner();
+        final scanResult = await scanner.scan(
+          commonParent: validation.commonParent!,
+          relativeItemNames: validation.relativeNames,
+        );
+
+        if (!mounted) return;
+
+        if (scanResult.warnings.isNotEmpty) {
+          final proceed = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => _buildCompatibilityDialog(ctx, scanResult),
+          );
+          if (proceed != true) {
+            return;
+          }
+        }
+      } finally {
+        if (mounted) {
+          setState(() {
+            _isScanning = false;
+          });
+        }
+      }
+    }
+
+    jobController.startProtectionPipeline(
+      sevenZipExe: toolStatus.sevenZip.path!,
+      par2Exe: toolStatus.par2.path,
+      validation: validation,
+      level: _compressionLevel,
+      format: _format,
+      createRecoveryData: _createRecoveryData && hasPar2,
+      redundancy: _redundancy.round(),
+    );
+  }
+
+  Widget _buildCompatibilityDialog(
+    BuildContext context,
+    CompatibilityScanResult scanResult,
+  ) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final displayWarnings = scanResult.warnings.take(50).toList();
+    final remainingCount = scanResult.warnings.length - displayWarnings.length;
+
+    return AlertDialog(
+      title: Row(
+        children: [
+          Icon(Icons.warning_amber_rounded, color: colorScheme.error),
+          const SizedBox(width: 8),
+          const Expanded(child: Text('Cross-platform compatibility warnings')),
+        ],
+      ),
+      content: SizedBox(
+        width: 600,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (scanResult.limitReached) ...[
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    'Scan limit reached (100,000 entries). Remaining files were not checked.',
+                    style: TextStyle(
+                      color: colorScheme.onErrorContainer,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              Text(
+                'The following items may cause errors or be altered when opened on Windows or macOS:',
+                style: theme.textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 12),
+              ...displayWarnings.map(
+                (w) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SelectableText(
+                        w.path,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(w.message, style: theme.textTheme.bodySmall),
+                      Text(
+                        'Fix: ${w.suggestedFix}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontStyle: FontStyle.italic,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (remainingCount > 0)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    'and $remainingCount more...',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: colorScheme.primary,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        OutlinedButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Go back'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text('Create anyway'),
+        ),
+      ],
+    );
   }
 
   Future<void> _pickFiles() async {
@@ -337,6 +497,7 @@ class _ProtectPageState extends State<ProtectPage> {
       selectedPaths: _selectedPaths,
       outputDirectory: _outputDirectory,
       archiveName: _nameController.text,
+      format: _format,
     );
 
     final activeOutputPath = isRunning ? jobController.createdOutputFile : null;
@@ -358,7 +519,7 @@ class _ProtectPageState extends State<ProtectPage> {
         : null;
     final potentialOutputPath =
         _outputDirectory != null && _nameController.text.trim().isNotEmpty
-        ? '${InputSelection.normalizePath(_outputDirectory!)}/${_nameController.text.trim().endsWith('.7z') ? _nameController.text.trim() : '${_nameController.text.trim()}.7z'}'
+        ? '${InputSelection.normalizePath(_outputDirectory!)}/${InputSelection.computeFinalArchiveName(_nameController.text, _format)}'
         : null;
 
     Par2Validation par2Validation = const Par2Validation.valid();
@@ -587,14 +748,41 @@ class _ProtectPageState extends State<ProtectPage> {
                     ],
                   ),
                   const SizedBox(height: 16),
+                  Text('Archive format', style: theme.textTheme.titleSmall),
+                  const SizedBox(height: 8),
+                  SegmentedButton<ArchiveFormat>(
+                    segments: const [
+                      ButtonSegment(
+                        value: ArchiveFormat.sevenZip,
+                        label: Text('7z'),
+                      ),
+                      ButtonSegment(
+                        value: ArchiveFormat.zip,
+                        label: Text('ZIP'),
+                      ),
+                    ],
+                    selected: {_format},
+                    onSelectionChanged: isRunning
+                        ? null
+                        : (newSelection) =>
+                              _onFormatChanged(newSelection.first),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'ZIP opens on Windows and macOS without extra software. 7z compresses better but needs a tool on macOS and older Windows.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   TextField(
                     controller: _nameController,
                     enabled: !isRunning,
                     onChanged: (_) => setState(() {}),
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Archive name',
-                      suffixText: '.7z',
-                      border: OutlineInputBorder(),
+                      suffixText: _format.extension,
+                      border: const OutlineInputBorder(),
                       isDense: true,
                     ),
                   ),
@@ -825,18 +1013,14 @@ class _ProtectPageState extends State<ProtectPage> {
           // 6. Primary Action Button
           FilledButton.icon(
             icon: const Icon(Icons.archive),
-            label: const Text('Create archive'),
-            onPressed: canCreate
-                ? () {
-                    jobController.startProtectionPipeline(
-                      sevenZipExe: toolStatus.sevenZip.path!,
-                      par2Exe: toolStatus.par2.path,
-                      validation: validation,
-                      level: _compressionLevel,
-                      createRecoveryData: _createRecoveryData && hasPar2,
-                      redundancy: _redundancy.round(),
-                    );
-                  }
+            label: Text(_isScanning ? 'Checking names...' : 'Create archive'),
+            onPressed: (canCreate && !_isScanning)
+                ? () => _handleCreateArchive(
+                    jobController: jobController,
+                    toolStatus: toolStatus,
+                    validation: validation,
+                    hasPar2: hasPar2,
+                  )
                 : null,
           ),
           const SizedBox(height: 16),
