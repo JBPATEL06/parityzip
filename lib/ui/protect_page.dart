@@ -147,8 +147,14 @@ class _ProtectPageState extends State<ProtectPage> {
     final lastSuccessPath = jobController.lastResult?.isSuccess == true
         ? jobController.lastResult?.outputPath
         : null;
+    final potentialOutputPath =
+        _outputDirectory != null && _nameController.text.trim().isNotEmpty
+        ? '${InputSelection.normalizePath(_outputDirectory!)}/${_nameController.text.trim().endsWith('.7z') ? _nameController.text.trim() : '${_nameController.text.trim()}.7z'}'
+        : null;
     final isOutputFromCurrentJob =
-        lastSuccessPath != null && validation.fullOutputPath == lastSuccessPath;
+        lastSuccessPath != null &&
+        (validation.fullOutputPath == lastSuccessPath ||
+            potentialOutputPath == lastSuccessPath);
 
     final canCreate =
         has7z && validation.isValid && !isOutputFromCurrentJob && !isRunning;
@@ -545,7 +551,12 @@ class _ProtectPageState extends State<ProtectPage> {
           const SizedBox(height: 16),
 
           // 7. Progress & Results
-          const ProgressCard(),
+          ProgressCard(
+            onCreateAnother: () {
+              _suggestNextName();
+              jobController.clearStatus();
+            },
+          ),
           const SizedBox(height: 16),
 
           // 8. Log Panel

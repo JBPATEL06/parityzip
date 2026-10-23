@@ -6,7 +6,9 @@ import 'package:provider/provider.dart';
 import '../../state/job_controller.dart';
 
 class ProgressCard extends StatelessWidget {
-  const ProgressCard({super.key});
+  final VoidCallback? onCreateAnother;
+
+  const ProgressCard({super.key, this.onCreateAnother});
 
   static String formatBytes(int bytes) {
     if (bytes < 1024) return '$bytes B';
@@ -160,10 +162,22 @@ class ProgressCard extends StatelessWidget {
                 const SizedBox(height: 12),
                 Align(
                   alignment: Alignment.centerRight,
-                  child: FilledButton.tonalIcon(
-                    icon: const Icon(Icons.folder_open, size: 18),
-                    label: const Text('Open folder'),
-                    onPressed: () => openFolder(path),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      if (onCreateAnother != null)
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.add_circle_outline, size: 18),
+                          label: const Text('Create another'),
+                          onPressed: onCreateAnother,
+                        ),
+                      FilledButton.tonalIcon(
+                        icon: const Icon(Icons.folder_open, size: 18),
+                        label: const Text('Open folder'),
+                        onPressed: () => openFolder(path),
+                      ),
+                    ],
                   ),
                 ),
               ],

@@ -14,11 +14,10 @@ class InputValidation {
   }) : isValid = true,
        errorMessage = null;
 
-  const InputValidation.invalid(this.errorMessage)
+  const InputValidation.invalid(this.errorMessage, {this.fullOutputPath})
     : isValid = false,
       commonParent = null,
-      relativeNames = const [],
-      fullOutputPath = null;
+      relativeNames = const [];
 
   @override
   String toString() => isValid
@@ -141,6 +140,7 @@ class InputSelection {
     if (fileExists(fullOutputPath)) {
       return InputValidation.invalid(
         "Output file '$finalArchiveName' already exists in the destination folder.",
+        fullOutputPath: fullOutputPath,
       );
     }
 
