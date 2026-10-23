@@ -141,6 +141,50 @@ class ProgressCard extends StatelessWidget {
                 SelectableText('File: $path'),
                 const SizedBox(height: 4),
                 Text('Size: $sizeText'),
+                if (result.par2Summary != null) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Recovery data: ${result.par2Summary!.fileCount} files, ${formatBytes(result.par2Summary!.totalBytes)} (${result.par2Summary!.overheadPercent.toStringAsFixed(1)}% overhead)',
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(
+                        result.par2Verified == true
+                            ? Icons.verified_outlined
+                            : Icons.warning_amber_rounded,
+                        size: 16,
+                        color: result.par2Verified == true
+                            ? colorScheme.primary
+                            : colorScheme.error,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        result.par2Verified == true
+                            ? 'Sanity check: Verified OK'
+                            : 'Sanity check: Verification warning',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: result.par2Verified == true
+                              ? colorScheme.primary
+                              : colorScheme.error,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                if (result.recoveryNote != null) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    result.recoveryNote!,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontStyle: FontStyle.italic,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
                 if (result.warnings.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Text(

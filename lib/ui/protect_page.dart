@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 
 import '../core/input_selection.dart';
 import '../core/models.dart';
+import '../services/par2_service.dart';
 import '../services/sevenzip_service.dart';
 import '../state/job_controller.dart';
 import 'widgets/log_panel.dart';
@@ -45,6 +46,8 @@ class _ProtectPageState extends State<ProtectPage> {
     text: 'archive',
   );
   CompressionLevel _compressionLevel = CompressionLevel.normal;
+  bool _createRecoveryData = true;
+  double _redundancy = 10.0;
   bool _isDragging = false;
   JobStatus? _lastStatus;
   FeedbackMessage? _topFeedback;
@@ -97,6 +100,9 @@ class _ProtectPageState extends State<ProtectPage> {
             _selectedPaths.clear();
             _nameController.text = 'archive';
           });
+          final recoverySubtitle = result.par2Summary != null
+              ? 'Saved to ${result.outputPath} with ${result.par2Summary!.fileCount} recovery files'
+              : 'Saved to ${result.outputPath}';
           _showTopFeedback(
             FeedbackMessage(
               type: result.hasWarnings
@@ -105,7 +111,7 @@ class _ProtectPageState extends State<ProtectPage> {
               title: result.hasWarnings
                   ? 'Archive created with warnings: $name'
                   : 'Archive created successfully: $name',
-              subtitle: 'Saved to ${result.outputPath}',
+              subtitle: recoverySubtitle,
               actionLabel: 'Open folder',
               onAction: () {
                 if (result.outputPath != null) {
@@ -344,6 +350,8 @@ class _ProtectPageState extends State<ProtectPage> {
       },
     );
     final has7z = toolStatus.sevenZip.isFound;
+    final hasPar2 = toolStatus.par2.isFound;
+    final willCreateRecovery = hasPar2 && _createRecoveryData;
 
     final lastSuccessPath = jobController.lastResult?.isSuccess == true
         ? jobController.lastResult?.outputPath
@@ -352,13 +360,32 @@ class _ProtectPageState extends State<ProtectPage> {
         _outputDirectory != null && _nameController.text.trim().isNotEmpty
         ? '${InputSelection.normalizePath(_outputDirectory!)}/${_nameController.text.trim().endsWith('.7z') ? _nameController.text.trim() : '${_nameController.text.trim()}.7z'}'
         : null;
+
+    Par2Validation par2Validation = const Par2Validation.valid();
+    if (validation.isValid &&
+        willCreateRecovery &&
+        potentialOutputPath != null &&
+        potentialOutputPath != activeOutputPath) {
+      par2Validation = Par2Service.validateCreate(
+        redundancy: _redundancy.round(),
+        archiveFilePath: potentialOutputPath,
+        checkFileExists: (path) =>
+            path != activeOutputPath && File(path).existsSync(),
+      );
+    }
+
+    final isOverallValid = validation.isValid && par2Validation.isValid;
+    final overallErrorMessage = !validation.isValid
+        ? validation.errorMessage
+        : (!par2Validation.isValid ? par2Validation.errorMessage : null);
+
     final isOutputFromCurrentJob =
         lastSuccessPath != null &&
         (validation.fullOutputPath == lastSuccessPath ||
             potentialOutputPath == lastSuccessPath);
 
     final canCreate =
-        has7z && validation.isValid && !isOutputFromCurrentJob && !isRunning;
+        has7z && isOverallValid && !isOutputFromCurrentJob && !isRunning;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -616,10 +643,9 @@ class _ProtectPageState extends State<ProtectPage> {
           ),
           const SizedBox(height: 16),
 
-          // 5. Recovery data (disabled, coming in M3)
+          // 5. Recovery data (M3)
           Card(
             margin: EdgeInsets.zero,
-            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -628,32 +654,76 @@ class _ProtectPageState extends State<ProtectPage> {
                   Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          'Recovery data',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: theme.disabledColor,
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Recovery data',
+                              style: theme.textTheme.titleSmall,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              hasPar2
+                                  ? 'Create self-healing PAR2 data alongside the archive'
+                                  : 'par2 tool is missing from PATH. Archive will be created without recovery data.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: hasPar2
+                                    ? theme.textTheme.bodySmall?.color
+                                    : colorScheme.error,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Chip(
-                        label: const Text(
-                          'Coming in M3',
-                          style: TextStyle(fontSize: 11),
-                        ),
-                        visualDensity: VisualDensity.compact,
-                        padding: EdgeInsets.zero,
+                      Switch(
+                        value: hasPar2 && _createRecoveryData,
+                        onChanged: isRunning || !hasPar2
+                            ? null
+                            : (val) {
+                                setState(() {
+                                  _createRecoveryData = val;
+                                });
+                              },
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Recovery data: 10% (Roughly this much damage can be repaired)',
-                    style: TextStyle(fontSize: 12, color: theme.disabledColor),
-                  ),
-                  const SizedBox(height: 8),
-                  Slider(value: 10, min: 5, max: 30, onChanged: null),
+                  if (hasPar2 && _createRecoveryData) ...[
+                    const Divider(height: 24),
+                    Row(
+                      children: [
+                        Text(
+                          'Redundancy: ${_redundancy.round()}%',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Roughly ${_redundancy.round()}% damage can be repaired',
+                            textAlign: TextAlign.end,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: theme.textTheme.bodySmall?.color,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    Slider(
+                      value: _redundancy,
+                      min: 5,
+                      max: 30,
+                      divisions: 25,
+                      label: '${_redundancy.round()}%',
+                      onChanged: isRunning
+                          ? null
+                          : (val) {
+                              setState(() {
+                                _redundancy = val;
+                              });
+                            },
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -704,7 +774,7 @@ class _ProtectPageState extends State<ProtectPage> {
               ),
             ),
           ] else if (!isRunning &&
-              !validation.isValid &&
+              !isOverallValid &&
               _selectedPaths.isNotEmpty) ...[
             Container(
               margin: const EdgeInsets.only(bottom: 12),
@@ -722,11 +792,12 @@ class _ProtectPageState extends State<ProtectPage> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      validation.errorMessage!,
+                      overallErrorMessage ?? '',
                       style: TextStyle(color: colorScheme.error, fontSize: 13),
                     ),
                   ),
-                  if (validation.errorMessage!.contains('already exists')) ...[
+                  if (overallErrorMessage != null &&
+                      overallErrorMessage.contains('already exists')) ...[
                     const SizedBox(width: 8),
                     TextButton.icon(
                       icon: const Icon(
@@ -736,9 +807,8 @@ class _ProtectPageState extends State<ProtectPage> {
                       label: const Text('Suggest name'),
                       onPressed: _suggestNextName,
                     ),
-                  ] else if (validation.errorMessage!.contains(
-                    'parent folder',
-                  )) ...[
+                  ] else if (overallErrorMessage != null &&
+                      overallErrorMessage.contains('parent folder')) ...[
                     const SizedBox(width: 8),
                     TextButton.icon(
                       icon: const Icon(Icons.clear_all, size: 16),
@@ -757,10 +827,13 @@ class _ProtectPageState extends State<ProtectPage> {
             label: const Text('Create archive'),
             onPressed: canCreate
                 ? () {
-                    jobController.startCompression(
-                      exe: toolStatus.sevenZip.path!,
+                    jobController.startProtectionPipeline(
+                      sevenZipExe: toolStatus.sevenZip.path!,
+                      par2Exe: toolStatus.par2.path,
                       validation: validation,
                       level: _compressionLevel,
+                      createRecoveryData: _createRecoveryData && hasPar2,
+                      redundancy: _redundancy.round(),
                     );
                   }
                 : null,
