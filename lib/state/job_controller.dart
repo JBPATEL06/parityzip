@@ -11,6 +11,8 @@ import 'log_controller.dart';
 
 enum JobStatus { idle, running, success, failure }
 
+enum JobType { protect, verify, repair }
+
 class JobResult {
   final bool isSuccess;
   final bool hasWarnings;
@@ -106,6 +108,9 @@ class JobController extends ChangeNotifier {
   JobStatus _status = JobStatus.idle;
   JobStatus get status => _status;
 
+  JobType _currentJobType = JobType.protect;
+  JobType get currentJobType => _currentJobType;
+
   bool get isRunning => _status == JobStatus.running;
 
   int _currentStep = 1;
@@ -129,6 +134,12 @@ class JobController extends ChangeNotifier {
   JobResult? _lastResult;
   JobResult? get lastResult => _lastResult;
 
+  VerifyResult? _lastVerifyResult;
+  VerifyResult? get lastVerifyResult => _lastVerifyResult;
+
+  RepairResult? _lastRepairResult;
+  RepairResult? get lastRepairResult => _lastRepairResult;
+
   String? _createdOutputFile;
   String? get createdOutputFile => _createdOutputFile;
 
@@ -138,6 +149,7 @@ class JobController extends ChangeNotifier {
 
   void clearStatus() {
     _status = JobStatus.idle;
+    _currentJobType = JobType.protect;
     _currentStep = 1;
     _totalSteps = 1;
     _stepLabel = null;
@@ -145,6 +157,8 @@ class JobController extends ChangeNotifier {
     _statusMessage = null;
     _cancelledNote = null;
     _lastResult = null;
+    _lastVerifyResult = null;
+    _lastRepairResult = null;
     _createdOutputFile = null;
     notifyListeners();
   }
@@ -193,6 +207,7 @@ class JobController extends ChangeNotifier {
     final names = validation.relativeNames;
 
     final shouldCreatePar2 = createRecoveryData && par2Exe != null;
+    _currentJobType = JobType.protect;
     _totalSteps = shouldCreatePar2 ? 3 : 1;
     _currentStep = 1;
 
@@ -414,6 +429,358 @@ class JobController extends ChangeNotifier {
     );
   }
 
+  /// Verifies a .par2 set and its protected files.
+  Future<VerifyResult?> startVerifyJob({
+    required String par2Exe,
+    required String par2FilePath,
+  }) async {
+    if (_status == JobStatus.running) return null;
+
+    final validation = Par2Service.validatePar2Input(par2FilePath);
+    if (!validation.isValid) {
+      _status = JobStatus.failure;
+      _statusMessage = validation.errorMessage;
+      notifyListeners();
+      return null;
+    }
+
+    _status = JobStatus.running;
+    _currentJobType = JobType.verify;
+    _currentStep = 1;
+    _totalSteps = 1;
+    _stepLabel = 'Verifying files with recovery data...';
+    _progress = null;
+    _statusMessage = 'Verifying...';
+    _cancelled = false;
+    _cancelledNote = null;
+    _lastVerifyResult = null;
+    _lastRepairResult = null;
+    notifyListeners();
+
+    logController.clear();
+    logController.addLine('=== PAR2 VERIFY STARTED ===');
+    logController.addLine('Target: $par2FilePath');
+
+    final file = File(par2FilePath);
+    final workDir = file.parent.path;
+    final par2FileName = file.path.split('/').last;
+    final args = Par2Service.buildVerifyArgs(par2FileName);
+
+    final stdoutBuf = StringBuffer();
+
+    final exitCode = await _runStepProcess(
+      exe: par2Exe,
+      args: args,
+      workingDir: workDir,
+      onProgress: (text) {
+        stdoutBuf.write(text);
+        final percent = Par2Service.parseProgress(text);
+        if (percent != null) {
+          _progress = (percent.clamp(0, 100)) / 100.0;
+          _statusMessage = 'Verifying... $percent%';
+          notifyListeners();
+        }
+      },
+    );
+
+    if (_cancelled) {
+      final res = VerifyResult.cancelled(par2Path: par2FilePath);
+      _lastVerifyResult = res;
+      _finishCancelled('Verification was cancelled.');
+      return res;
+    }
+
+    final rawOutput = stdoutBuf.toString();
+    final report = Par2Service.parseVerifyReport(rawOutput, exitCode: exitCode);
+
+    final result = VerifyResult(
+      isSuccess: report.state == Par2VerifyState.ok,
+      state: report.state,
+      report: report,
+      par2Path: par2FilePath,
+      rawLog: rawOutput,
+      exitCode: exitCode,
+      errorMessage: report.state != Par2VerifyState.ok
+          ? Par2Service.mapExitCode(exitCode, isVerify: true).errorMessage
+          : null,
+    );
+
+    _lastVerifyResult = result;
+    _status = result.isSuccess ? JobStatus.success : JobStatus.failure;
+    _progress = 1.0;
+    _statusMessage = result.isSuccess
+        ? 'Verification passed: All files are correct.'
+        : (result.state == Par2VerifyState.damagedRepairable
+            ? 'Archive is damaged but repairable.'
+            : (result.state == Par2VerifyState.damagedNotRepairable
+                ? 'Archive is damaged beyond repair.'
+                : 'Verification failed.'));
+    notifyListeners();
+    return result;
+  }
+
+  /// Runs the full 3-step repair pipeline:
+  /// (a) Verify -> if ok -> finish with "Nothing to repair"
+  ///            -> if damagedRepairable -> proceed to (b)
+  ///            -> if damagedNotRepairable or error -> stop without running repair
+  /// (b) Repair
+  /// (c) Verify again -> if ok -> Repaired and verified
+  ///                  -> else -> Failure
+  Future<RepairResult?> startRepairJob({
+    required String par2Exe,
+    required String par2FilePath,
+  }) async {
+    if (_status == JobStatus.running) return null;
+
+    final validation = Par2Service.validatePar2Input(par2FilePath);
+    if (!validation.isValid) {
+      _status = JobStatus.failure;
+      _statusMessage = validation.errorMessage;
+      notifyListeners();
+      return null;
+    }
+
+    _status = JobStatus.running;
+    _currentJobType = JobType.repair;
+    _currentStep = 1;
+    _totalSteps = 3;
+    _stepLabel = 'Step 1 of 3: Checking recovery data and files...';
+    _progress = null;
+    _statusMessage = 'Checking...';
+    _cancelled = false;
+    _cancelledNote = null;
+    _lastRepairResult = null;
+    _lastVerifyResult = null;
+    notifyListeners();
+
+    logController.clear();
+    logController.addLine('=== PAR2 REPAIR PIPELINE STARTED ===');
+    logController.addLine('Target: $par2FilePath');
+
+    final file = File(par2FilePath);
+    final workDir = file.parent.path;
+    final par2FileName = file.path.split('/').last;
+
+    // STEP 1: Verify (Checking)
+    final verifyArgs = Par2Service.buildVerifyArgs(par2FileName);
+    final step1Buf = StringBuffer();
+
+    final step1Code = await _runStepProcess(
+      exe: par2Exe,
+      args: verifyArgs,
+      workingDir: workDir,
+      onProgress: (text) {
+        step1Buf.write(text);
+        final percent = Par2Service.parseProgress(text);
+        if (percent != null) {
+          _progress = (percent.clamp(0, 100)) / 100.0;
+          _statusMessage = 'Checking... $percent%';
+          notifyListeners();
+        }
+      },
+    );
+
+    if (_cancelled) {
+      final res = RepairResult.cancelled(par2Path: par2FilePath);
+      _lastRepairResult = res;
+      _finishCancelled('Repair cancelled in Step 1.');
+      return res;
+    }
+
+    final initialReport = Par2Service.parseVerifyReport(
+      step1Buf.toString(),
+      exitCode: step1Code,
+    );
+
+    if (step1Code == 0) {
+      // Nothing to repair
+      final res = RepairResult(
+        isSuccess: true,
+        status: RepairStatus.nothingToRepair,
+        initialVerifyReport: initialReport,
+        par2Path: par2FilePath,
+        rawLog: step1Buf.toString(),
+      );
+      _lastRepairResult = res;
+      _status = JobStatus.success;
+      _progress = 1.0;
+      _statusMessage = 'Nothing to repair: All files are already intact.';
+      notifyListeners();
+      return res;
+    }
+
+    if (step1Code != 1) {
+      // Damaged beyond repair or error: do NOT run repair!
+      final status = step1Code == 2
+          ? RepairStatus.cannotBeRepaired
+          : RepairStatus.error;
+      final res = RepairResult(
+        isSuccess: false,
+        status: status,
+        initialVerifyReport: initialReport,
+        par2Path: par2FilePath,
+        errorMessage: step1Code == 2
+            ? 'Archive is damaged beyond repair (not enough recovery data).'
+            : 'Error checking files (exit code $step1Code).',
+        rawLog: step1Buf.toString(),
+      );
+      _lastRepairResult = res;
+      _status = JobStatus.failure;
+      _progress = null;
+      _statusMessage = res.errorMessage;
+      notifyListeners();
+      return res;
+    }
+
+    // STEP 2: Repair
+    _currentStep = 2;
+    _stepLabel = 'Step 2 of 3: Repairing damaged files...';
+    _progress = null;
+    _statusMessage = 'Repairing...';
+    notifyListeners();
+
+    logController.addLine('>>> [Step 2/3] Running repair...');
+    final repairArgs = Par2Service.buildRepairArgs(par2FileName);
+    final step2Buf = StringBuffer();
+
+    final targetName = initialReport.files.isNotEmpty
+        ? initialReport.files.first.fileName
+        : (par2FileName.endsWith('.par2')
+            ? par2FileName.substring(0, par2FileName.length - 5)
+            : par2FileName);
+    final targetFullPath = '$workDir/$targetName';
+
+    final step2Code = await _runStepProcess(
+      exe: par2Exe,
+      args: repairArgs,
+      workingDir: workDir,
+      onProgress: (text) {
+        step2Buf.write(text);
+        final percent = Par2Service.parseProgress(text);
+        if (percent != null) {
+          _progress = (percent.clamp(0, 100)) / 100.0;
+          _statusMessage = 'Repairing... $percent%';
+          notifyListeners();
+        }
+      },
+    );
+
+    final backup = Par2Service.findBackupFile(targetFullPath);
+    final backupPath = backup?.path;
+    final backupSize = backup != null && backup.existsSync() ? backup.lengthSync() : null;
+
+    if (_cancelled) {
+      final res = RepairResult.cancelled(
+        par2Path: par2FilePath,
+        backupFilePath: backupPath,
+        backupFileSizeBytes: backupSize,
+      );
+      _lastRepairResult = res;
+      _finishCancelled('Repair was cancelled by user. Files kept on disk.');
+      return res;
+    }
+
+    if (step2Code != 0) {
+      final res = RepairResult(
+        isSuccess: false,
+        status: RepairStatus.error,
+        initialVerifyReport: initialReport,
+        par2Path: par2FilePath,
+        repairedFileName: targetName,
+        backupFilePath: backupPath,
+        backupFileSizeBytes: backupSize,
+        errorMessage: 'par2 repair failed with exit code $step2Code.',
+        rawLog: step2Buf.toString(),
+      );
+      _lastRepairResult = res;
+      _status = JobStatus.failure;
+      _progress = null;
+      _statusMessage = res.errorMessage;
+      notifyListeners();
+      return res;
+    }
+
+    // STEP 3: Verify Again (Sanity check)
+    _currentStep = 3;
+    _stepLabel = 'Step 3 of 3: Verifying repaired files...';
+    _progress = null;
+    _statusMessage = 'Checking again...';
+    notifyListeners();
+
+    logController.addLine('>>> [Step 3/3] Post-repair verification check...');
+    final step3Buf = StringBuffer();
+
+    final step3Code = await _runStepProcess(
+      exe: par2Exe,
+      args: verifyArgs,
+      workingDir: workDir,
+      onProgress: (text) {
+        step3Buf.write(text);
+        final percent = Par2Service.parseProgress(text);
+        if (percent != null) {
+          _progress = (percent.clamp(0, 100)) / 100.0;
+          _statusMessage = 'Checking again... $percent%';
+          notifyListeners();
+        }
+      },
+    );
+
+    if (_cancelled) {
+      final res = RepairResult.cancelled(
+        par2Path: par2FilePath,
+        backupFilePath: backupPath,
+        backupFileSizeBytes: backupSize,
+      );
+      _lastRepairResult = res;
+      _finishCancelled('Repair was cancelled during final verification.');
+      return res;
+    }
+
+    final finalReport = Par2Service.parseVerifyReport(
+      step3Buf.toString(),
+      exitCode: step3Code,
+    );
+
+    if (step3Code == 0) {
+      final res = RepairResult(
+        isSuccess: true,
+        status: RepairStatus.repairedAndVerified,
+        initialVerifyReport: initialReport,
+        finalVerifyReport: finalReport,
+        par2Path: par2FilePath,
+        repairedFileName: targetName,
+        backupFilePath: backupPath,
+        backupFileSizeBytes: backupSize,
+        rawLog: '${step1Buf.toString()}\n${step2Buf.toString()}\n${step3Buf.toString()}',
+      );
+      _lastRepairResult = res;
+      _status = JobStatus.success;
+      _progress = 1.0;
+      _statusMessage = 'Repair complete and verified: All files are healthy.';
+      notifyListeners();
+      return res;
+    } else {
+      final res = RepairResult(
+        isSuccess: false,
+        status: RepairStatus.error,
+        initialVerifyReport: initialReport,
+        finalVerifyReport: finalReport,
+        par2Path: par2FilePath,
+        repairedFileName: targetName,
+        backupFilePath: backupPath,
+        backupFileSizeBytes: backupSize,
+        errorMessage: 'Post-repair verification check failed (exit code $step3Code).',
+        rawLog: step3Buf.toString(),
+      );
+      _lastRepairResult = res;
+      _status = JobStatus.failure;
+      _progress = null;
+      _statusMessage = res.errorMessage;
+      notifyListeners();
+      return res;
+    }
+  }
+
   Future<int> _runStepProcess({
     required String exe,
     required List<String> args,
@@ -541,22 +908,30 @@ class JobController extends ChangeNotifier {
     await _subscription?.cancel();
     _subscription = null;
 
-    if (_currentStep == 1) {
-      if (_createdOutputFile != null) {
-        _cleanupCreatedFile(_createdOutputFile!);
+    if (_currentJobType == JobType.protect) {
+      if (_currentStep == 1) {
+        if (_createdOutputFile != null) {
+          _cleanupCreatedFile(_createdOutputFile!);
+        }
+        _finishCancelled('Archive creation was cancelled.');
+      } else if (_currentStep == 2) {
+        if (_createdOutputFile != null) {
+          _cleanupPar2Files(_createdOutputFile!);
+        }
+        _finishCancelled(
+          'Cancelled in Step 2: Archive was kept without recovery data.',
+        );
+      } else {
+        // Step 3
+        _finishCancelled(
+          'Cancelled during verification: Archive and recovery files kept.',
+        );
       }
-      _finishCancelled('Archive creation was cancelled.');
-    } else if (_currentStep == 2) {
-      if (_createdOutputFile != null) {
-        _cleanupPar2Files(_createdOutputFile!);
-      }
+    } else if (_currentJobType == JobType.verify) {
+      _finishCancelled('Verification was cancelled.');
+    } else if (_currentJobType == JobType.repair) {
       _finishCancelled(
-        'Cancelled in Step 2: Archive was kept without recovery data.',
-      );
-    } else {
-      // Step 3
-      _finishCancelled(
-        'Cancelled during verification: Archive and recovery files kept.',
+        'Repair was stopped by user. Files on disk were preserved.',
       );
     }
 

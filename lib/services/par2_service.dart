@@ -84,6 +84,86 @@ class Par2VerifyReport {
   bool get isRepairable => state == Par2VerifyState.damagedRepairable;
 }
 
+class VerifyResult {
+  final bool isSuccess;
+  final bool isCancelled;
+  final Par2VerifyState state;
+  final Par2VerifyReport report;
+  final String par2Path;
+  final String rawLog;
+  final int exitCode;
+  final String? errorMessage;
+
+  const VerifyResult({
+    required this.isSuccess,
+    this.isCancelled = false,
+    required this.state,
+    required this.report,
+    required this.par2Path,
+    this.rawLog = '',
+    required this.exitCode,
+    this.errorMessage,
+  });
+
+  const VerifyResult.cancelled({required this.par2Path})
+    : isSuccess = false,
+      isCancelled = true,
+      state = Par2VerifyState.error,
+      report = const Par2VerifyReport(state: Par2VerifyState.error),
+      rawLog = '',
+      exitCode = 255,
+      errorMessage = 'Verification was cancelled.';
+}
+
+enum RepairStatus {
+  repairedAndVerified,
+  nothingToRepair,
+  cannotBeRepaired,
+  error,
+  cancelled,
+}
+
+class RepairResult {
+  final bool isSuccess;
+  final bool isCancelled;
+  final RepairStatus status;
+  final Par2VerifyReport? initialVerifyReport;
+  final Par2VerifyReport? finalVerifyReport;
+  final String par2Path;
+  final String? repairedFileName;
+  final String? backupFilePath;
+  final int? backupFileSizeBytes;
+  final String? errorMessage;
+  final String rawLog;
+
+  const RepairResult({
+    required this.isSuccess,
+    this.isCancelled = false,
+    required this.status,
+    this.initialVerifyReport,
+    this.finalVerifyReport,
+    required this.par2Path,
+    this.repairedFileName,
+    this.backupFilePath,
+    this.backupFileSizeBytes,
+    this.errorMessage,
+    this.rawLog = '',
+  });
+
+  const RepairResult.cancelled({
+    required this.par2Path,
+    this.backupFilePath,
+    this.backupFileSizeBytes,
+  }) : isSuccess = false,
+       isCancelled = true,
+       status = RepairStatus.cancelled,
+       initialVerifyReport = null,
+       finalVerifyReport = null,
+       repairedFileName = null,
+       errorMessage = 'Repair was cancelled by user.',
+       rawLog = '';
+}
+
 class Par2Service {
   static const int minRedundancy = 5;
   static const int maxRedundancy = 30;
