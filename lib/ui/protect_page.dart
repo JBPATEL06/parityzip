@@ -63,6 +63,23 @@ class _ProtectPageState extends State<ProtectPage> {
     });
   }
 
+  void _suggestNextName() {
+    final current = _nameController.text.trim();
+    final clean = current.endsWith('.7z')
+        ? current.substring(0, current.length - 3)
+        : current;
+    final match = RegExp(r'^(.*?)(?:_(\d+))?$').firstMatch(clean);
+    if (match != null) {
+      final prefix = match.group(1) ?? 'archive';
+      final numStr = match.group(2);
+      final nextNum = (numStr != null ? int.parse(numStr) : 0) + 1;
+      _nameController.text = '${prefix}_$nextNum';
+    } else {
+      _nameController.text = '${clean}_1';
+    }
+    setState(() {});
+  }
+
   Future<void> _pickFiles() async {
     try {
       final files = await openFiles();
@@ -126,7 +143,15 @@ class _ProtectPageState extends State<ProtectPage> {
 
     final validation = selection.validate();
     final has7z = toolStatus.sevenZip.isFound;
-    final canCreate = has7z && validation.isValid && !isRunning;
+
+    final lastSuccessPath = jobController.lastResult?.isSuccess == true
+        ? jobController.lastResult?.outputPath
+        : null;
+    final isOutputFromCurrentJob =
+        lastSuccessPath != null && validation.fullOutputPath == lastSuccessPath;
+
+    final canCreate =
+        has7z && validation.isValid && !isOutputFromCurrentJob && !isRunning;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -223,24 +248,43 @@ class _ProtectPageState extends State<ProtectPage> {
                   final path = _selectedPaths[index];
                   final isDir = Directory(path).existsSync();
                   final name = InputSelection.getBaseName(path);
+                  final parent = InputSelection.getParentDir(path);
+                  final firstParent = InputSelection.getParentDir(
+                    _selectedPaths.first,
+                  );
+                  final hasFolderConflict = parent != firstParent;
 
                   return ListTile(
                     dense: true,
+                    tileColor: hasFolderConflict
+                        ? colorScheme.errorContainer.withValues(alpha: 0.3)
+                        : null,
                     leading: Icon(
-                      isDir ? Icons.folder : Icons.insert_drive_file,
+                      hasFolderConflict
+                          ? Icons.warning_amber_rounded
+                          : (isDir ? Icons.folder : Icons.insert_drive_file),
+                      color: hasFolderConflict ? colorScheme.error : null,
                       size: 20,
                     ),
                     title: Text(
                       name,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 13),
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: hasFolderConflict
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                        color: hasFolderConflict ? colorScheme.error : null,
+                      ),
                     ),
                     subtitle: Text(
-                      path,
+                      hasFolderConflict ? 'In different folder: $parent' : path,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 11,
-                        color: theme.textTheme.bodySmall?.color,
+                        color: hasFolderConflict
+                            ? colorScheme.error
+                            : theme.textTheme.bodySmall?.color,
                       ),
                     ),
                     trailing: IconButton(
@@ -405,7 +449,7 @@ class _ProtectPageState extends State<ProtectPage> {
           ),
           const SizedBox(height: 16),
 
-          // Validation / Error explanation
+          // Validation / Error explanation / Success status hint
           if (!has7z) ...[
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
@@ -414,12 +458,72 @@ class _ProtectPageState extends State<ProtectPage> {
                 style: TextStyle(color: colorScheme.error, fontSize: 13),
               ),
             ),
+          ] else if (isOutputFromCurrentJob) ...[
+            Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: colorScheme.secondaryContainer.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.check_circle_outline,
+                    size: 18,
+                    color: colorScheme.secondary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Archive created: ${InputSelection.getBaseName(lastSuccessPath)}. Change name to create another.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colorScheme.onSecondaryContainer,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.drive_file_rename_outline, size: 14),
+                    label: const Text('New name'),
+                    onPressed: _suggestNextName,
+                  ),
+                ],
+              ),
+            ),
           ] else if (!validation.isValid && _selectedPaths.isNotEmpty) ...[
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text(
-                validation.errorMessage!,
-                style: TextStyle(color: colorScheme.error, fontSize: 13),
+            Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: colorScheme.errorContainer.withValues(alpha: 0.4),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: colorScheme.error.withValues(alpha: 0.3),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.error_outline, size: 18, color: colorScheme.error),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      validation.errorMessage!,
+                      style: TextStyle(color: colorScheme.error, fontSize: 13),
+                    ),
+                  ),
+                  if (validation.errorMessage!.contains('parent folder')) ...[
+                    const SizedBox(width: 8),
+                    TextButton.icon(
+                      icon: const Icon(Icons.clear_all, size: 16),
+                      label: const Text('Clear list'),
+                      onPressed: isRunning
+                          ? null
+                          : () => setState(() => _selectedPaths.clear()),
+                    ),
+                  ],
+                ],
               ),
             ),
           ],
