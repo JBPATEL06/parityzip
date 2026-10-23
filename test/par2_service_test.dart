@@ -184,7 +184,10 @@ void main() {
         Par2Service.mapVerifyExitCode(2),
         Par2VerifyState.damagedNotRepairable,
       );
-      expect(Par2Service.mapVerifyExitCode(4), Par2VerifyState.insufficientData);
+      expect(
+        Par2Service.mapVerifyExitCode(4),
+        Par2VerifyState.insufficientData,
+      );
       expect(Par2Service.mapVerifyExitCode(3), Par2VerifyState.error);
       expect(Par2Service.mapVerifyExitCode(5), Par2VerifyState.error);
       expect(Par2Service.mapVerifyExitCode(6), Par2VerifyState.error);
@@ -272,7 +275,8 @@ Repair is not possible.
     });
 
     test('handles unparseable or arbitrary garbage output without error', () {
-      const output = 'some random error garbage from stderr or crash\nSegmentation fault';
+      const output =
+          'some random error garbage from stderr or crash\nSegmentation fault';
       final report = Par2Service.parseVerifyReport(output, exitCode: 5);
       expect(report.state, Par2VerifyState.error);
       expect(report.files, isEmpty);

@@ -39,11 +39,7 @@ enum Par2VerifyState {
   error,
 }
 
-enum Par2TargetFileStatus {
-  found,
-  damaged,
-  missing,
-}
+enum Par2TargetFileStatus { found, damaged, missing }
 
 class Par2FileStatus {
   final String fileName;
@@ -270,14 +266,10 @@ class Par2Service {
 
   /// Parses verify/repair output lines into a [Par2VerifyReport].
   /// This parser is best-effort and never throws.
-  static Par2VerifyReport parseVerifyReport(
-    String output, {
-    int? exitCode,
-  }) {
-    final state =
-        exitCode != null
-            ? mapVerifyExitCode(exitCode)
-            : _inferStateFromOutput(output);
+  static Par2VerifyReport parseVerifyReport(String output, {int? exitCode}) {
+    final state = exitCode != null
+        ? mapVerifyExitCode(exitCode)
+        : _inferStateFromOutput(output);
 
     final files = <Par2FileStatus>[];
     int? availableBlocks;

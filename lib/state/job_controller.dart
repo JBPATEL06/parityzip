@@ -511,10 +511,10 @@ class JobController extends ChangeNotifier {
     _statusMessage = result.isSuccess
         ? 'Verification passed: All files are correct.'
         : (result.state == Par2VerifyState.damagedRepairable
-            ? 'Archive is damaged but repairable.'
-            : (result.state == Par2VerifyState.damagedNotRepairable
-                ? 'Archive is damaged beyond repair.'
-                : 'Verification failed.'));
+              ? 'Archive is damaged but repairable.'
+              : (result.state == Par2VerifyState.damagedNotRepairable
+                    ? 'Archive is damaged beyond repair.'
+                    : 'Verification failed.'));
     notifyListeners();
     return result;
   }
@@ -646,8 +646,8 @@ class JobController extends ChangeNotifier {
     final targetName = initialReport.files.isNotEmpty
         ? initialReport.files.first.fileName
         : (par2FileName.endsWith('.par2')
-            ? par2FileName.substring(0, par2FileName.length - 5)
-            : par2FileName);
+              ? par2FileName.substring(0, par2FileName.length - 5)
+              : par2FileName);
     final targetFullPath = '$workDir/$targetName';
 
     final step2Code = await _runStepProcess(
@@ -667,7 +667,9 @@ class JobController extends ChangeNotifier {
 
     final backup = Par2Service.findBackupFile(targetFullPath);
     final backupPath = backup?.path;
-    final backupSize = backup != null && backup.existsSync() ? backup.lengthSync() : null;
+    final backupSize = backup != null && backup.existsSync()
+        ? backup.lengthSync()
+        : null;
 
     if (_cancelled) {
       final res = RepairResult.cancelled(
@@ -751,7 +753,8 @@ class JobController extends ChangeNotifier {
         repairedFileName: targetName,
         backupFilePath: backupPath,
         backupFileSizeBytes: backupSize,
-        rawLog: '${step1Buf.toString()}\n${step2Buf.toString()}\n${step3Buf.toString()}',
+        rawLog:
+            '${step1Buf.toString()}\n${step2Buf.toString()}\n${step3Buf.toString()}',
       );
       _lastRepairResult = res;
       _status = JobStatus.success;
@@ -769,7 +772,8 @@ class JobController extends ChangeNotifier {
         repairedFileName: targetName,
         backupFilePath: backupPath,
         backupFileSizeBytes: backupSize,
-        errorMessage: 'Post-repair verification check failed (exit code $step3Code).',
+        errorMessage:
+            'Post-repair verification check failed (exit code $step3Code).',
         rawLog: step3Buf.toString(),
       );
       _lastRepairResult = res;

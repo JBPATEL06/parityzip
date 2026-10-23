@@ -442,7 +442,9 @@ void main() {
           expect(exe, 'par2');
           expect(args, ['verify', 'archive.7z.par2']);
           return Stream.fromIterable([
-            const StdoutEvent('Loading: 100.0%\r\nTarget: "archive.7z" - found.\nAll files are correct, repair is not required.\n'),
+            const StdoutEvent(
+              'Loading: 100.0%\r\nTarget: "archive.7z" - found.\nAll files are correct, repair is not required.\n',
+            ),
             const ExitCodeEvent(0),
           ]);
         },
@@ -455,7 +457,8 @@ void main() {
 
       // Create a dummy file in a temp directory for validation
       final tempDir = Directory.systemTemp.createTempSync('par2_verify_test');
-      final par2File = File('${tempDir.path}/archive.7z.par2')..writeAsStringSync('dummy');
+      final par2File = File('${tempDir.path}/archive.7z.par2')
+        ..writeAsStringSync('dummy');
 
       final result = await controller.startVerifyJob(
         par2Exe: 'par2',
@@ -475,7 +478,9 @@ void main() {
       final fakeRunner = FakeProcessRunner(
         onRun: (exe, args, workingDirectory, stdinData) {
           return Stream.fromIterable([
-            const StdoutEvent('Target: "archive.7z" - damaged. Found 1999 of 2000 data blocks.\nRepair is possible.\n'),
+            const StdoutEvent(
+              'Target: "archive.7z" - damaged. Found 1999 of 2000 data blocks.\nRepair is possible.\n',
+            ),
             const ExitCodeEvent(1),
           ]);
         },
@@ -487,7 +492,8 @@ void main() {
       );
 
       final tempDir = Directory.systemTemp.createTempSync('par2_verify_test');
-      final par2File = File('${tempDir.path}/archive.7z.par2')..writeAsStringSync('dummy');
+      final par2File = File('${tempDir.path}/archive.7z.par2')
+        ..writeAsStringSync('dummy');
 
       final result = await controller.startVerifyJob(
         par2Exe: 'par2',
@@ -541,7 +547,8 @@ void main() {
       );
 
       final tempDir = Directory.systemTemp.createTempSync('par2_verify_test');
-      final par2File = File('${tempDir.path}/archive.7z.par2')..writeAsStringSync('dummy');
+      final par2File = File('${tempDir.path}/archive.7z.par2')
+        ..writeAsStringSync('dummy');
 
       final future = controller.startVerifyJob(
         par2Exe: 'par2',
@@ -574,7 +581,9 @@ void main() {
           callCount++;
           expect(args.first, 'verify');
           return Stream.fromIterable([
-            const StdoutEvent('All files are correct, repair is not required.\n'),
+            const StdoutEvent(
+              'All files are correct, repair is not required.\n',
+            ),
             const ExitCodeEvent(0),
           ]);
         },
@@ -586,7 +595,8 @@ void main() {
       );
 
       final tempDir = Directory.systemTemp.createTempSync('par2_repair_test');
-      final par2File = File('${tempDir.path}/archive.7z.par2')..writeAsStringSync('dummy');
+      final par2File = File('${tempDir.path}/archive.7z.par2')
+        ..writeAsStringSync('dummy');
 
       final result = await controller.startRepairJob(
         par2Exe: 'par2',
@@ -602,103 +612,122 @@ void main() {
       tempDir.deleteSync(recursive: true);
     });
 
-    test('Path 2: repaired and verified (verify 1 -> repair 0 -> verify 0)', () async {
-      final logController = LogController();
-      final calls = <String>[];
+    test(
+      'Path 2: repaired and verified (verify 1 -> repair 0 -> verify 0)',
+      () async {
+        final logController = LogController();
+        final calls = <String>[];
 
-      final tempDir = Directory.systemTemp.createTempSync('par2_repair_test');
-      final par2File = File('${tempDir.path}/archive.7z.par2')..writeAsStringSync('dummy');
-      // Create target file and mock backup
-      final targetFile = File('${tempDir.path}/archive.7z')..writeAsStringSync('repaired data');
-      final backupFile = File('${tempDir.path}/archive.7z.1')..writeAsStringSync('damaged backup');
+        final tempDir = Directory.systemTemp.createTempSync('par2_repair_test');
+        final par2File = File('${tempDir.path}/archive.7z.par2')
+          ..writeAsStringSync('dummy');
+        // Create target file and mock backup
+        final targetFile = File('${tempDir.path}/archive.7z')
+          ..writeAsStringSync('repaired data');
+        final backupFile = File('${tempDir.path}/archive.7z.1')
+          ..writeAsStringSync('damaged backup');
 
-      final fakeRunner = FakeProcessRunner(
-        onRun: (exe, args, workingDirectory, stdinData) {
-          final mode = args.first;
-          calls.add(mode);
-          if (calls.length == 1) {
-            // Step 1: verify
-            expect(mode, 'verify');
+        final fakeRunner = FakeProcessRunner(
+          onRun: (exe, args, workingDirectory, stdinData) {
+            final mode = args.first;
+            calls.add(mode);
+            if (calls.length == 1) {
+              // Step 1: verify
+              expect(mode, 'verify');
+              return Stream.fromIterable([
+                const StdoutEvent(
+                  'Target: "archive.7z" - damaged.\nRepair is possible.\n',
+                ),
+                const ExitCodeEvent(1),
+              ]);
+            } else if (calls.length == 2) {
+              // Step 2: repair
+              expect(mode, 'repair');
+              return Stream.fromIterable([
+                const StdoutEvent(
+                  'Constructing: done.\nSolving: done.\nRepair complete.\n',
+                ),
+                const ExitCodeEvent(0),
+              ]);
+            } else {
+              // Step 3: verify again
+              expect(mode, 'verify');
+              return Stream.fromIterable([
+                const StdoutEvent(
+                  'Target: "archive.7z" - found.\nAll files are correct, repair is not required.\n',
+                ),
+                const ExitCodeEvent(0),
+              ]);
+            }
+          },
+        );
+
+        final controller = JobController(
+          processRunner: fakeRunner,
+          logController: logController,
+        );
+
+        final result = await controller.startRepairJob(
+          par2Exe: 'par2',
+          par2FilePath: par2File.path,
+        );
+
+        expect(result, isNotNull);
+        expect(result!.isSuccess, isTrue);
+        expect(result.status, RepairStatus.repairedAndVerified);
+        expect(calls, ['verify', 'repair', 'verify']);
+        expect(targetFile.existsSync(), isTrue);
+        expect(result.backupFilePath, equals(backupFile.path));
+        expect(result.backupFileSizeBytes, equals(backupFile.lengthSync()));
+        expect(controller.status, JobStatus.success);
+
+        tempDir.deleteSync(recursive: true);
+      },
+    );
+
+    test(
+      'Path 3: cannot be repaired (initial verify returns 2) never runs repair',
+      () async {
+        final logController = LogController();
+        int callCount = 0;
+
+        final fakeRunner = FakeProcessRunner(
+          onRun: (exe, args, workingDirectory, stdinData) {
+            callCount++;
+            expect(args.first, 'verify');
             return Stream.fromIterable([
-              const StdoutEvent('Target: "archive.7z" - damaged.\nRepair is possible.\n'),
-              const ExitCodeEvent(1),
+              const StdoutEvent(
+                'Target: "archive.7z" - damaged.\nRepair is not possible.\n',
+              ),
+              const ExitCodeEvent(2),
             ]);
-          } else if (calls.length == 2) {
-            // Step 2: repair
-            expect(mode, 'repair');
-            return Stream.fromIterable([
-              const StdoutEvent('Constructing: done.\nSolving: done.\nRepair complete.\n'),
-              const ExitCodeEvent(0),
-            ]);
-          } else {
-            // Step 3: verify again
-            expect(mode, 'verify');
-            return Stream.fromIterable([
-              const StdoutEvent('Target: "archive.7z" - found.\nAll files are correct, repair is not required.\n'),
-              const ExitCodeEvent(0),
-            ]);
-          }
-        },
-      );
+          },
+        );
 
-      final controller = JobController(
-        processRunner: fakeRunner,
-        logController: logController,
-      );
+        final controller = JobController(
+          processRunner: fakeRunner,
+          logController: logController,
+        );
 
-      final result = await controller.startRepairJob(
-        par2Exe: 'par2',
-        par2FilePath: par2File.path,
-      );
+        final tempDir = Directory.systemTemp.createTempSync('par2_repair_test');
+        final par2File = File('${tempDir.path}/archive.7z.par2')
+          ..writeAsStringSync('dummy');
 
-      expect(result, isNotNull);
-      expect(result!.isSuccess, isTrue);
-      expect(result.status, RepairStatus.repairedAndVerified);
-      expect(calls, ['verify', 'repair', 'verify']);
-      expect(result.backupFilePath, equals(backupFile.path));
-      expect(result.backupFileSizeBytes, equals(backupFile.lengthSync()));
-      expect(controller.status, JobStatus.success);
+        final result = await controller.startRepairJob(
+          par2Exe: 'par2',
+          par2FilePath: par2File.path,
+        );
 
-      tempDir.deleteSync(recursive: true);
-    });
+        expect(result, isNotNull);
+        expect(result!.isSuccess, isFalse);
+        expect(result.status, RepairStatus.cannotBeRepaired);
+        expect(callCount, 1); // Never called repair!
+        expect(controller.status, JobStatus.failure);
+        expect(controller.statusMessage, contains('damaged beyond repair'));
 
-    test('Path 3: cannot be repaired (initial verify returns 2) never runs repair', () async {
-      final logController = LogController();
-      int callCount = 0;
-
-      final fakeRunner = FakeProcessRunner(
-        onRun: (exe, args, workingDirectory, stdinData) {
-          callCount++;
-          expect(args.first, 'verify');
-          return Stream.fromIterable([
-            const StdoutEvent('Target: "archive.7z" - damaged.\nRepair is not possible.\n'),
-            const ExitCodeEvent(2),
-          ]);
-        },
-      );
-
-      final controller = JobController(
-        processRunner: fakeRunner,
-        logController: logController,
-      );
-
-      final tempDir = Directory.systemTemp.createTempSync('par2_repair_test');
-      final par2File = File('${tempDir.path}/archive.7z.par2')..writeAsStringSync('dummy');
-
-      final result = await controller.startRepairJob(
-        par2Exe: 'par2',
-        par2FilePath: par2File.path,
-      );
-
-      expect(result, isNotNull);
-      expect(result!.isSuccess, isFalse);
-      expect(result.status, RepairStatus.cannotBeRepaired);
-      expect(callCount, 1); // Never called repair!
-      expect(controller.status, JobStatus.failure);
-      expect(controller.statusMessage, contains('damaged beyond repair'));
-
-      tempDir.deleteSync(recursive: true);
-    });
+        tempDir.deleteSync(recursive: true);
+      },
+    );
 
     test('Path 4: final verify fails (initial verify 1 -> repair 0 -> final verify 1)', () async {
       final logController = LogController();
@@ -709,7 +738,9 @@ void main() {
           callCount++;
           if (callCount == 1) {
             return Stream.fromIterable([
-              const StdoutEvent('Target: "archive.7z" - damaged.\nRepair is possible.\n'),
+              const StdoutEvent(
+                'Target: "archive.7z" - damaged.\nRepair is possible.\n',
+              ),
               const ExitCodeEvent(1),
             ]);
           } else if (callCount == 2) {
@@ -732,7 +763,8 @@ void main() {
       );
 
       final tempDir = Directory.systemTemp.createTempSync('par2_repair_test');
-      final par2File = File('${tempDir.path}/archive.7z.par2')..writeAsStringSync('dummy');
+      final par2File = File('${tempDir.path}/archive.7z.par2')
+        ..writeAsStringSync('dummy');
 
       final result = await controller.startRepairJob(
         par2Exe: 'par2',
@@ -744,64 +776,74 @@ void main() {
       expect(result.status, RepairStatus.error);
       expect(callCount, 3);
       expect(controller.status, JobStatus.failure);
-      expect(controller.statusMessage, contains('Post-repair verification check failed'));
+      expect(
+        controller.statusMessage,
+        contains('Post-repair verification check failed'),
+      );
 
       tempDir.deleteSync(recursive: true);
     });
 
-    test('Path 5: cancel during repair preserves all files and never deletes', () async {
-      final logController = LogController();
-      final repairStream = StreamController<ProcessEvent>();
-      final repairStarted = Completer<void>();
-      int step = 0;
+    test(
+      'Path 5: cancel during repair preserves all files and never deletes',
+      () async {
+        final logController = LogController();
+        final repairStream = StreamController<ProcessEvent>();
+        final repairStarted = Completer<void>();
+        int step = 0;
 
-      final fakeRunner = FakeProcessRunner(
-        onRun: (exe, args, workingDirectory, stdinData) {
-          step++;
-          if (step == 1) {
-            return Stream.fromIterable([
-              const StdoutEvent('Target: "archive.7z" - damaged.\nRepair is possible.\n'),
-              const ExitCodeEvent(1),
-            ]);
-          } else {
-            Future.microtask(() {
-              repairStream.add(const StdoutEvent('Solving: 50.0%\r'));
-              repairStarted.complete();
-            });
-            return repairStream.stream;
-          }
-        },
-      );
+        final fakeRunner = FakeProcessRunner(
+          onRun: (exe, args, workingDirectory, stdinData) {
+            step++;
+            if (step == 1) {
+              return Stream.fromIterable([
+                const StdoutEvent(
+                  'Target: "archive.7z" - damaged.\nRepair is possible.\n',
+                ),
+                const ExitCodeEvent(1),
+              ]);
+            } else {
+              Future.microtask(() {
+                repairStream.add(const StdoutEvent('Solving: 50.0%\r'));
+                repairStarted.complete();
+              });
+              return repairStream.stream;
+            }
+          },
+        );
 
-      final tempDir = Directory.systemTemp.createTempSync('par2_repair_test');
-      final par2File = File('${tempDir.path}/archive.7z.par2')..writeAsStringSync('dummy');
-      final targetFile = File('${tempDir.path}/archive.7z')..writeAsStringSync('damaged file');
+        final tempDir = Directory.systemTemp.createTempSync('par2_repair_test');
+        final par2File = File('${tempDir.path}/archive.7z.par2')
+          ..writeAsStringSync('dummy');
+        final targetFile = File('${tempDir.path}/archive.7z')
+          ..writeAsStringSync('damaged file');
 
-      final controller = JobController(
-        processRunner: fakeRunner,
-        logController: logController,
-      );
+        final controller = JobController(
+          processRunner: fakeRunner,
+          logController: logController,
+        );
 
-      final future = controller.startRepairJob(
-        par2Exe: 'par2',
-        par2FilePath: par2File.path,
-      );
+        final future = controller.startRepairJob(
+          par2Exe: 'par2',
+          par2FilePath: par2File.path,
+        );
 
-      await repairStarted.future;
-      expect(controller.currentStep, 2);
-      expect(controller.status, JobStatus.running);
+        await repairStarted.future;
+        expect(controller.currentStep, 2);
+        expect(controller.status, JobStatus.running);
 
-      await controller.cancel();
-      await repairStream.close();
-      final result = await future;
+        await controller.cancel();
+        await repairStream.close();
+        final result = await future;
 
-      expect(result!.isCancelled, isTrue);
-      expect(result.status, RepairStatus.cancelled);
-      // All files preserved!
-      expect(par2File.existsSync(), isTrue);
-      expect(targetFile.existsSync(), isTrue);
+        expect(result!.isCancelled, isTrue);
+        expect(result.status, RepairStatus.cancelled);
+        // All files preserved!
+        expect(par2File.existsSync(), isTrue);
+        expect(targetFile.existsSync(), isTrue);
 
-      tempDir.deleteSync(recursive: true);
-    });
+        tempDir.deleteSync(recursive: true);
+      },
+    );
   });
 }
