@@ -5,6 +5,7 @@ import 'package:yaru/yaru.dart';
 import 'core/models.dart';
 import 'core/process_runner.dart';
 import 'core/tool_locator.dart';
+import 'state/job_controller.dart';
 import 'state/log_controller.dart';
 import 'ui/protect_page.dart';
 import 'ui/repair_page.dart';
@@ -15,18 +16,21 @@ class ParityZipApp extends StatelessWidget {
   final ToolLocator? toolLocator;
   final ProcessRunner? processRunner;
   final LogController? logController;
+  final JobController? jobController;
 
   const ParityZipApp({
     super.key,
     this.toolLocator,
     this.processRunner,
     this.logController,
+    this.jobController,
   });
 
   @override
   Widget build(BuildContext context) {
     final locator = toolLocator ?? ToolLocator();
     final toolStatus = locator.locate();
+    final runner = processRunner ?? const RealProcessRunner();
 
     return MultiProvider(
       providers: [
@@ -34,8 +38,18 @@ class ParityZipApp extends StatelessWidget {
           create: (_) => logController ?? LogController(),
         ),
         Provider<ToolStatus>.value(value: toolStatus),
-        Provider<ProcessRunner>.value(
-          value: processRunner ?? const RealProcessRunner(),
+        Provider<ProcessRunner>.value(value: runner),
+        ChangeNotifierProxyProvider<LogController, JobController>(
+          create: (context) =>
+              jobController ??
+              JobController(
+                processRunner: runner,
+                logController: context.read<LogController>(),
+              ),
+          update: (context, log, previous) =>
+              previous ??
+              jobController ??
+              JobController(processRunner: runner, logController: log),
         ),
       ],
       child: YaruTheme(
