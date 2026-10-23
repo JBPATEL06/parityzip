@@ -132,8 +132,13 @@ void main() {
       expect(find.text('Verify'), findsOneWidget);
       expect(find.text('Repair'), findsOneWidget);
 
-      // Default active tab: Protect -> "Coming in M2"
-      expect(find.text('Coming in M2'), findsOneWidget);
+      // Default active tab: Protect page with drop zone, add buttons, level selector, disabled recovery data
+      expect(find.text('Drag & drop files or folders here'), findsOneWidget);
+      expect(find.text('Add files'), findsOneWidget);
+      expect(find.text('Add folder'), findsOneWidget);
+      expect(find.text('Create archive'), findsOneWidget);
+      expect(find.text('Recovery data'), findsOneWidget);
+      expect(find.text('Coming in M3'), findsOneWidget);
 
       // Tap "Verify" tab
       await tester.tap(find.text('Verify'));
@@ -173,6 +178,36 @@ void main() {
         tester.view.physicalSize = const Size(360, 600);
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'Create archive button is disabled with explanation when 7z is missing',
+      (tester) async {
+        final locator = ToolLocator(
+          pathEnv: '/usr/bin',
+          isExecutableFile: (path) => path == '/usr/bin/par2', // 7z missing
+        );
+
+        await tester.pumpWidget(
+          ParityZipApp(
+            toolLocator: locator,
+            processRunner: FakeProcessRunner(),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text(
+            'Cannot create archive: 7-Zip CLI tool (7z) is missing from PATH.',
+          ),
+          findsOneWidget,
+        );
+
+        final createButton = tester.widget<FilledButton>(
+          find.widgetWithText(FilledButton, 'Create archive'),
+        );
+        expect(createButton.onPressed, isNull);
       },
     );
   });
