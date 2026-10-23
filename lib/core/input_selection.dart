@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'models.dart';
+
 class InputValidation {
   final bool isValid;
   final String? errorMessage;
@@ -29,12 +31,38 @@ class InputSelection {
   final List<String> selectedPaths;
   final String? outputDirectory;
   final String archiveName;
+  final ArchiveFormat format;
 
   const InputSelection({
     required this.selectedPaths,
     required this.outputDirectory,
     required this.archiveName,
+    this.format = ArchiveFormat.sevenZip,
   });
+
+  static String computeFinalArchiveName(String rawName, ArchiveFormat format) {
+    var name = rawName.trim();
+    if (name.isEmpty) return '';
+    if (name.toLowerCase().endsWith('.7z')) {
+      name = name.substring(0, name.length - 3);
+    } else if (name.toLowerCase().endsWith('.zip')) {
+      name = name.substring(0, name.length - 4);
+    }
+    return '$name${format.extension}';
+  }
+
+  static String changeExtension(String rawName, ArchiveFormat newFormat) {
+    var name = rawName.trim();
+    if (name.isEmpty) return '';
+    if (name.toLowerCase().endsWith('.7z')) {
+      name = name.substring(0, name.length - 3);
+      return '$name${newFormat.extension}';
+    } else if (name.toLowerCase().endsWith('.zip')) {
+      name = name.substring(0, name.length - 4);
+      return '$name${newFormat.extension}';
+    }
+    return name;
+  }
 
   static String normalizePath(String path) {
     var p = path.trim();
@@ -108,9 +136,7 @@ class InputSelection {
       );
     }
 
-    final finalArchiveName = trimmedName.endsWith('.7z')
-        ? trimmedName
-        : '$trimmedName.7z';
+    final finalArchiveName = computeFinalArchiveName(trimmedName, format);
 
     // Validate output folder
     if (outputDirectory == null || outputDirectory!.trim().isEmpty) {

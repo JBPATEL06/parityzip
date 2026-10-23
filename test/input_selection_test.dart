@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:parityzip/core/input_selection.dart';
+import 'package:parityzip/core/models.dart';
 
 void main() {
   group('InputSelection Validation', () {
@@ -177,5 +178,97 @@ void main() {
       expect(result.isValid, isTrue);
       expect(result.fullOutputPath, equals('/tmp/already.7z'));
     });
+
+    test('ZIP format selection produces .zip output path', () {
+      const selection = InputSelection(
+        selectedPaths: ['/home/user/docs/file1.txt'],
+        outputDirectory: '/tmp',
+        archiveName: 'my_backup',
+        format: ArchiveFormat.zip,
+      );
+
+      final result = selection.validate(
+        checkFileExists: (_) => false,
+        checkDirExists: (_) => false,
+      );
+
+      expect(result.isValid, isTrue);
+      expect(result.fullOutputPath, equals('/tmp/my_backup.zip'));
+    });
+  });
+
+  group('InputSelection extension logic (computeFinalArchiveName & changeExtension)', () {
+    test('never double-appends extension when already typed', () {
+      expect(
+        InputSelection.computeFinalArchiveName(
+          'my_archive.zip',
+          ArchiveFormat.zip,
+        ),
+        equals('my_archive.zip'),
+      );
+      expect(
+        InputSelection.computeFinalArchiveName(
+          'my_archive.7z',
+          ArchiveFormat.sevenZip,
+        ),
+        equals('my_archive.7z'),
+      );
+    });
+
+    test('appends extension if none provided', () {
+      expect(
+        InputSelection.computeFinalArchiveName('stem_only', ArchiveFormat.zip),
+        equals('stem_only.zip'),
+      );
+      expect(
+        InputSelection.computeFinalArchiveName(
+          'stem_only',
+          ArchiveFormat.sevenZip,
+        ),
+        equals('stem_only.7z'),
+      );
+    });
+
+    test(
+      'preserves user stem when switching format with computeFinalArchiveName',
+      () {
+        expect(
+          InputSelection.computeFinalArchiveName(
+            'my_report.7z',
+            ArchiveFormat.zip,
+          ),
+          equals('my_report.zip'),
+        );
+        expect(
+          InputSelection.computeFinalArchiveName(
+            'my_report.zip',
+            ArchiveFormat.sevenZip,
+          ),
+          equals('my_report.7z'),
+        );
+      },
+    );
+
+    test(
+      'changeExtension updates explicit extension and preserves typed stem',
+      () {
+        expect(
+          InputSelection.changeExtension('custom_name.7z', ArchiveFormat.zip),
+          equals('custom_name.zip'),
+        );
+        expect(
+          InputSelection.changeExtension(
+            'custom_name.zip',
+            ArchiveFormat.sevenZip,
+          ),
+          equals('custom_name.7z'),
+        );
+        // Untyped stem is kept untyped
+        expect(
+          InputSelection.changeExtension('plain_stem', ArchiveFormat.zip),
+          equals('plain_stem'),
+        );
+      },
+    );
   });
 }
