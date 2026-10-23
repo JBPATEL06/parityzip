@@ -53,3 +53,14 @@ class ToolStatus {
   @override
   String toString() => 'ToolStatus(7z: $sevenZip, par2: $par2)';
 }
+
+enum ArchiveFormat {
+  sevenZip('7z', '.7z', '-t7z'),
+  zip('ZIP', '.zip', '-tzip');
+
+  final String label;
+  final String extension;
+  final String typeSwitch;
+
+  const ArchiveFormat(this.label, this.extension, this.typeSwitch);
+}

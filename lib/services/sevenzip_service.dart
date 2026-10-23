@@ -1,3 +1,5 @@
+import '../core/models.dart';
+
 enum CompressionLevel {
   fast(1, 'Fast'),
   normal(5, 'Normal'),
@@ -14,6 +16,7 @@ class SevenZipService {
   const SevenZipService();
 
   static List<String> buildCreateArgs({
+    ArchiveFormat format = ArchiveFormat.sevenZip,
     required CompressionLevel level,
     required String outputFileName,
     required List<String> names,
@@ -25,13 +28,14 @@ class SevenZipService {
       return name;
     }).toList();
 
+    final extraSwitches = format == ArchiveFormat.zip
+        ? ['-mm=Deflate', '-mx=${level.mx}', '-bsp1', '-mcu=on', '-spd', '-snl']
+        : ['-mx=${level.mx}', '-bsp1', '-spd', '-snl'];
+
     return [
       'a',
-      '-t7z',
-      '-mx=${level.mx}',
-      '-bsp1',
-      '-spd',
-      '-snl',
+      format.typeSwitch,
+      ...extraSwitches,
       outputFileName,
       ...sanitizedNames,
     ];

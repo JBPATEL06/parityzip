@@ -1,10 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:parityzip/core/models.dart';
 import 'package:parityzip/services/sevenzip_service.dart';
 
 void main() {
-  group('SevenZipService - buildCreateArgs', () {
-    test('arg builder for Fast level (mx=1)', () {
+  group('SevenZipService - buildCreateArgs regression for 7z', () {
+    test('regression test: 7z Fast level (mx=1) byte-for-byte identical', () {
       final args = SevenZipService.buildCreateArgs(
+        format: ArchiveFormat.sevenZip,
         level: CompressionLevel.fast,
         outputFileName: '/tmp/test.7z',
         names: ['file1.txt', 'folder1'],
@@ -26,25 +28,53 @@ void main() {
       );
     });
 
-    test('arg builder for Normal level (mx=5)', () {
+    test('regression test: 7z Normal level (mx=5) byte-for-byte identical', () {
       final args = SevenZipService.buildCreateArgs(
         level: CompressionLevel.normal,
         outputFileName: '/tmp/test.7z',
         names: ['file.txt'],
       );
 
-      expect(args, contains('-mx=5'));
-    });
-
-    test('arg builder for Maximum level (mx=9)', () {
-      final args = SevenZipService.buildCreateArgs(
-        level: CompressionLevel.maximum,
-        outputFileName: '/tmp/test.7z',
-        names: ['file.txt'],
+      expect(
+        args,
+        equals([
+          'a',
+          '-t7z',
+          '-mx=5',
+          '-bsp1',
+          '-spd',
+          '-snl',
+          '/tmp/test.7z',
+          'file.txt',
+        ]),
       );
-
-      expect(args, contains('-mx=9'));
     });
+
+    test(
+      'regression test: 7z Maximum level (mx=9) byte-for-byte identical',
+      () {
+        final args = SevenZipService.buildCreateArgs(
+          format: ArchiveFormat.sevenZip,
+          level: CompressionLevel.maximum,
+          outputFileName: '/tmp/test.7z',
+          names: ['file.txt'],
+        );
+
+        expect(
+          args,
+          equals([
+            'a',
+            '-t7z',
+            '-mx=9',
+            '-bsp1',
+            '-spd',
+            '-snl',
+            '/tmp/test.7z',
+            'file.txt',
+          ]),
+        );
+      },
+    );
 
     test('arg builder -odd.txt handling (prepends ./)', () {
       final args = SevenZipService.buildCreateArgs(
@@ -56,6 +86,95 @@ void main() {
       expect(args, contains('./-odd.txt'));
       expect(args, contains('normal.txt'));
       expect(args, contains('./-weird_name.bin'));
+    });
+  });
+
+  group('SevenZipService - buildCreateArgs for ZIP', () {
+    test('ZIP arg builder at Fast level (mx=1)', () {
+      final args = SevenZipService.buildCreateArgs(
+        format: ArchiveFormat.zip,
+        level: CompressionLevel.fast,
+        outputFileName: '/tmp/test.zip',
+        names: ['file1.txt', 'folder1'],
+      );
+
+      expect(
+        args,
+        equals([
+          'a',
+          '-tzip',
+          '-mm=Deflate',
+          '-mx=1',
+          '-bsp1',
+          '-mcu=on',
+          '-spd',
+          '-snl',
+          '/tmp/test.zip',
+          'file1.txt',
+          'folder1',
+        ]),
+      );
+    });
+
+    test('ZIP arg builder at Normal level (mx=5)', () {
+      final args = SevenZipService.buildCreateArgs(
+        format: ArchiveFormat.zip,
+        level: CompressionLevel.normal,
+        outputFileName: '/tmp/test.zip',
+        names: ['file.txt'],
+      );
+
+      expect(
+        args,
+        equals([
+          'a',
+          '-tzip',
+          '-mm=Deflate',
+          '-mx=5',
+          '-bsp1',
+          '-mcu=on',
+          '-spd',
+          '-snl',
+          '/tmp/test.zip',
+          'file.txt',
+        ]),
+      );
+    });
+
+    test('ZIP arg builder at Maximum level (mx=9)', () {
+      final args = SevenZipService.buildCreateArgs(
+        format: ArchiveFormat.zip,
+        level: CompressionLevel.maximum,
+        outputFileName: '/tmp/test.zip',
+        names: ['file.txt'],
+      );
+
+      expect(
+        args,
+        equals([
+          'a',
+          '-tzip',
+          '-mm=Deflate',
+          '-mx=9',
+          '-bsp1',
+          '-mcu=on',
+          '-spd',
+          '-snl',
+          '/tmp/test.zip',
+          'file.txt',
+        ]),
+      );
+    });
+
+    test('ZIP arg builder handles leading-dash names with ./', () {
+      final args = SevenZipService.buildCreateArgs(
+        format: ArchiveFormat.zip,
+        level: CompressionLevel.normal,
+        outputFileName: '/tmp/test.zip',
+        names: ['-odd.txt'],
+      );
+
+      expect(args, contains('./-odd.txt'));
     });
   });
 
