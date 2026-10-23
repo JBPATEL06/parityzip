@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:desktop_drop/desktop_drop.dart';
@@ -47,6 +48,32 @@ class _ProtectPageState extends State<ProtectPage> {
   bool _isDragging = false;
   JobStatus? _lastStatus;
   FeedbackMessage? _topFeedback;
+  Timer? _feedbackTimer;
+
+  void _showTopFeedback(
+    FeedbackMessage message, {
+    Duration duration = const Duration(seconds: 5),
+  }) {
+    _feedbackTimer?.cancel();
+    setState(() {
+      _topFeedback = message;
+    });
+    _feedbackTimer = Timer(duration, () {
+      if (mounted) {
+        setState(() {
+          _topFeedback = null;
+        });
+      }
+    });
+  }
+
+  void _dismissTopFeedback() {
+    _feedbackTimer?.cancel();
+    _feedbackTimer = null;
+    setState(() {
+      _topFeedback = null;
+    });
+  }
 
   @override
   void didChangeDependencies() {
@@ -69,7 +96,9 @@ class _ProtectPageState extends State<ProtectPage> {
           setState(() {
             _selectedPaths.clear();
             _nameController.text = 'archive';
-            _topFeedback = FeedbackMessage(
+          });
+          _showTopFeedback(
+            FeedbackMessage(
               type: result.hasWarnings
                   ? FeedbackType.warning
                   : FeedbackType.success,
@@ -83,23 +112,26 @@ class _ProtectPageState extends State<ProtectPage> {
                   ProgressCard.openFolder(result.outputPath!);
                 }
               },
-            );
-          });
+            ),
+            duration: const Duration(seconds: 5),
+          );
         } else if (currentStatus == JobStatus.failure && result != null) {
-          setState(() {
-            _topFeedback = FeedbackMessage(
+          _showTopFeedback(
+            FeedbackMessage(
               type: FeedbackType.failure,
               title: 'Compression failed',
               subtitle: result.errorMessage ?? 'An unexpected error occurred.',
-            );
-          });
+            ),
+            duration: const Duration(seconds: 8),
+          );
         } else if (cancelledNote != null) {
-          setState(() {
-            _topFeedback = FeedbackMessage(
+          _showTopFeedback(
+            FeedbackMessage(
               type: FeedbackType.info,
               title: 'Archive creation was cancelled.',
-            );
-          });
+            ),
+            duration: const Duration(seconds: 5),
+          );
         }
       });
     }
@@ -108,6 +140,7 @@ class _ProtectPageState extends State<ProtectPage> {
 
   @override
   void dispose() {
+    _feedbackTimer?.cancel();
     _nameController.dispose();
     super.dispose();
   }
@@ -278,7 +311,7 @@ class _ProtectPageState extends State<ProtectPage> {
             IconButton(
               icon: Icon(Icons.close, size: 18, color: textColor),
               tooltip: 'Dismiss',
-              onPressed: () => setState(() => _topFeedback = null),
+              onPressed: _dismissTopFeedback,
             ),
           ],
         ),

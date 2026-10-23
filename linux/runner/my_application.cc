@@ -52,6 +52,20 @@ static void my_application_activate(GApplication* application) {
     gtk_window_set_title(window, "ParityZip");
   }
 
+  // Set window icon if available
+  const gchar* icon_paths[] = {
+      "data/flutter_assets/assets/app_icon_256.png",
+      "assets/app_icon_256.png",
+      "/home/jeel/Desktop/Projects/par2with7z/assets/app_icon_256.png",
+      nullptr};
+  for (int i = 0; icon_paths[i] != nullptr; i++) {
+    if (g_file_test(icon_paths[i], G_FILE_TEST_EXISTS)) {
+      gtk_window_set_icon_from_file(window, icon_paths[i], nullptr);
+      gtk_window_set_default_icon_from_file(icon_paths[i], nullptr);
+      break;
+    }
+  }
+
   gtk_window_set_default_size(window, 1280, 720);
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
