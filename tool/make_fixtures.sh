@@ -39,11 +39,32 @@ echo "HUB LITE UPPERCASE" > "$DEST/hub_LITE"
 ln -s "$DEST/small.txt" "$DEST/symlink_file"
 ln -s "$DEST/nested" "$DEST/symlink_folder"
 
-# Optional --big
-if [[ "${1:-}" == "--big" ]]; then
-  echo "Generating random_500MB.bin..."
-  dd if=/dev/urandom of="$DEST/random_500MB.bin" bs=1M count=500 status=none
-fi
+# Optional flags: --big, --compat
+for arg in "$@"; do
+  if [[ "$arg" == "--big" ]]; then
+    echo "Generating random_500MB.bin..."
+    dd if=/dev/urandom of="$DEST/random_500MB.bin" bs=1M count=500 status=none
+  elif [[ "$arg" == "--compat" ]]; then
+    echo "Generating cross-platform compatibility fixtures in $DEST/compat..."
+    COMPAT_DIR="$DEST/compat"
+    mkdir -p "$COMPAT_DIR/clean"
+    echo "clean file" > "$COMPAT_DIR/clean/file1.txt"
+    echo "clean subfolder file" > "$COMPAT_DIR/clean/file2.txt"
+
+    echo "a:b" > "$COMPAT_DIR/a:b.txt"
+    echo "what?" > "$COMPAT_DIR/what?.txt"
+    echo "star*" > "$COMPAT_DIR/star*.txt"
+    echo 'quote"' > "$COMPAT_DIR/quote\".txt"
+    echo "pipe|name" > "$COMPAT_DIR/pipe|name.txt"
+    echo "trailing dot" > "$COMPAT_DIR/trailing."
+    echo "back\\slash" > "$COMPAT_DIR/back\\slash.txt"
+    echo "CON device" > "$COMPAT_DIR/CON.txt"
+    echo "nul device" > "$COMPAT_DIR/nul"
+    echo "hub lite" > "$COMPAT_DIR/hub_lite"
+    echo "HUB LITE" > "$COMPAT_DIR/hub_LITE"
+    ln -sf "$COMPAT_DIR/clean/file1.txt" "$COMPAT_DIR/compat_symlink"
+  fi
+done
 
 echo "Fixtures successfully generated in $DEST:"
 ls -la "$DEST"
