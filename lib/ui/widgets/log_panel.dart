@@ -32,11 +32,14 @@ class _LogPanelState extends State<LogPanel> {
       },
       header: Row(
         children: [
-          Text(
-            'Log (${controller.lineCount} lines)',
-            style: theme.textTheme.titleSmall,
+          Expanded(
+            child: Text(
+              'Log (${controller.lineCount} lines)',
+              style: theme.textTheme.titleSmall,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
-          const Spacer(),
+          const SizedBox(width: 8),
           OutlinedButton.icon(
             icon: const Icon(Icons.copy, size: 16),
             label: const Text('Copy log'),
@@ -52,7 +55,6 @@ class _LogPanelState extends State<LogPanel> {
                     );
                   },
           ),
-          const SizedBox(width: 8),
         ],
       ),
       child: Container(

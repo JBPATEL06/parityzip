@@ -145,5 +145,35 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Coming in M4'), findsOneWidget);
     });
+
+    testWidgets(
+      'resizing to 800x600 and smaller produces no RenderFlex overflow',
+      (tester) async {
+        final mockBinaries = {'/usr/bin/7z', '/usr/bin/par2'};
+        final locator = ToolLocator(
+          pathEnv: '/usr/bin',
+          isExecutableFile: (path) => mockBinaries.contains(path),
+        );
+
+        tester.view.physicalSize = const Size(800, 600);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(
+          ParityZipApp(
+            toolLocator: locator,
+            processRunner: FakeProcessRunner(),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+
+        // Also test very narrow size
+        tester.view.physicalSize = const Size(360, 600);
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      },
+    );
   });
 }
