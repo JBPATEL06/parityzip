@@ -13,6 +13,7 @@
 migrate_working_dir/
 devtools_options.yaml
 demo/
+assets/AppIcons*
 
 # IntelliJ related
 *.iml

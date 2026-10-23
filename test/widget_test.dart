@@ -138,7 +138,7 @@ void main() {
       expect(find.text('Add folder'), findsOneWidget);
       expect(find.text('Create archive'), findsOneWidget);
       expect(find.text('Recovery data'), findsOneWidget);
-      expect(find.text('Coming in M3'), findsOneWidget);
+      expect(find.text('Redundancy: 10%'), findsOneWidget);
 
       // Tap "Verify" tab
       await tester.tap(find.text('Verify'));
@@ -227,6 +227,74 @@ void main() {
 
       // While idle without selection, no "already exists" error
       expect(find.textContaining('already exists'), findsNothing);
+    });
+
+    testWidgets(
+      'when par2 is missing, recovery switch is disabled with explanation',
+      (tester) async {
+        final mockBinaries = {'/usr/bin/7z'}; // par2 missing
+        final locator = ToolLocator(
+          pathEnv: '/usr/bin',
+          isExecutableFile: (path) => mockBinaries.contains(path),
+        );
+
+        await tester.pumpWidget(
+          ParityZipApp(
+            toolLocator: locator,
+            processRunner: FakeProcessRunner(),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text(
+            'par2 tool is missing from PATH. Archive will be created without recovery data.',
+          ),
+          findsOneWidget,
+        );
+
+        // Switch is disabled
+        final switchWidget = tester.widget<Switch>(find.byType(Switch));
+        expect(switchWidget.onChanged, isNull);
+        expect(switchWidget.value, isFalse);
+      },
+    );
+
+    testWidgets('toggling recovery switch hides and shows slider', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1280, 1000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final mockBinaries = {'/usr/bin/7z', '/usr/bin/par2'};
+      final locator = ToolLocator(
+        pathEnv: '/usr/bin',
+        isExecutableFile: (path) => mockBinaries.contains(path),
+      );
+
+      await tester.pumpWidget(
+        ParityZipApp(toolLocator: locator, processRunner: FakeProcessRunner()),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(Slider), findsOneWidget);
+      expect(find.text('Redundancy: 10%'), findsOneWidget);
+
+      // Toggle switch OFF
+      await tester.tap(find.byType(Switch));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(Slider), findsNothing);
+      expect(find.text('Redundancy: 10%'), findsNothing);
+
+      // Toggle switch back ON
+      await tester.tap(find.byType(Switch));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(Slider), findsOneWidget);
+      expect(find.text('Redundancy: 10%'), findsOneWidget);
     });
   });
 }
