@@ -31,6 +31,59 @@ class Par2Summary {
   });
 }
 
+enum Par2VerifyState {
+  ok,
+  damagedRepairable,
+  damagedNotRepairable,
+  insufficientData,
+  error,
+}
+
+enum Par2TargetFileStatus {
+  found,
+  damaged,
+  missing,
+}
+
+class Par2FileStatus {
+  final String fileName;
+  final Par2TargetFileStatus status;
+  final int? availableBlocks;
+  final int? totalBlocks;
+
+  const Par2FileStatus({
+    required this.fileName,
+    required this.status,
+    this.availableBlocks,
+    this.totalBlocks,
+  });
+}
+
+class Par2VerifyReport {
+  final Par2VerifyState state;
+  final List<Par2FileStatus> files;
+  final int? availableBlocks;
+  final int? totalBlocks;
+  final int? recoveryBlocksAvailable;
+  final int? recoveryBlocksNeeded;
+  final bool? isRepairPossible;
+  final String rawOutput;
+
+  const Par2VerifyReport({
+    required this.state,
+    this.files = const [],
+    this.availableBlocks,
+    this.totalBlocks,
+    this.recoveryBlocksAvailable,
+    this.recoveryBlocksNeeded,
+    this.isRepairPossible,
+    this.rawOutput = '',
+  });
+
+  bool get isOk => state == Par2VerifyState.ok;
+  bool get isRepairable => state == Par2VerifyState.damagedRepairable;
+}
+
 class Par2Service {
   static const int minRedundancy = 5;
   static const int maxRedundancy = 30;
@@ -63,6 +116,231 @@ class Par2Service {
         ? './$par2FileName'
         : par2FileName;
     return ['verify', safePar2];
+  }
+
+  /// Builds the command line arguments for `par2 repair`.
+  static List<String> buildRepairArgs(String par2FileName) {
+    final safePar2 = par2FileName.startsWith('-')
+        ? './$par2FileName'
+        : par2FileName;
+    return ['repair', safePar2];
+  }
+
+  /// Validates a chosen `.par2` file before verify or repair:
+  /// - Path is not empty
+  /// - Has `.par2` extension (case-insensitive)
+  /// - File exists
+  /// - Is a regular file (not directory)
+  static Par2Validation validatePar2Input(
+    String filePath, {
+    bool Function(String path)? checkFileExists,
+    bool Function(String path)? checkIsRegularFile,
+  }) {
+    final trimmed = filePath.trim();
+    if (trimmed.isEmpty) {
+      return const Par2Validation.invalid('Please choose a .par2 file.');
+    }
+
+    if (!trimmed.toLowerCase().endsWith('.par2')) {
+      return const Par2Validation.invalid(
+        'Selected file must have a .par2 extension.',
+      );
+    }
+
+    final fileExists = checkFileExists ?? (path) => File(path).existsSync();
+    if (!fileExists(trimmed)) {
+      return Par2Validation.invalid("File does not exist: '$trimmed'.");
+    }
+
+    final isRegular =
+        checkIsRegularFile ??
+        (path) {
+          try {
+            final type = FileSystemEntity.typeSync(path, followLinks: true);
+            return type == FileSystemEntityType.file;
+          } catch (_) {
+            return false;
+          }
+        };
+
+    if (!isRegular(trimmed)) {
+      return Par2Validation.invalid(
+        "Selected path is not a regular file: '$trimmed'.",
+      );
+    }
+
+    return const Par2Validation.valid();
+  }
+
+  /// Maps exit code to [Par2VerifyState].
+  static Par2VerifyState mapVerifyExitCode(int exitCode) {
+    switch (exitCode) {
+      case 0:
+        return Par2VerifyState.ok;
+      case 1:
+        return Par2VerifyState.damagedRepairable;
+      case 2:
+        return Par2VerifyState.damagedNotRepairable;
+      case 4:
+        return Par2VerifyState.insufficientData;
+      default:
+        return Par2VerifyState.error;
+    }
+  }
+
+  /// Parses verify/repair output lines into a [Par2VerifyReport].
+  /// This parser is best-effort and never throws.
+  static Par2VerifyReport parseVerifyReport(
+    String output, {
+    int? exitCode,
+  }) {
+    final state =
+        exitCode != null
+            ? mapVerifyExitCode(exitCode)
+            : _inferStateFromOutput(output);
+
+    final files = <Par2FileStatus>[];
+    int? availableBlocks;
+    int? totalBlocks;
+    int? recoveryBlocksAvailable;
+    int? recoveryBlocksNeeded;
+    bool? isRepairPossible;
+
+    final targetRegex = RegExp(
+      r'Target:\s*"([^"]+)"\s*-\s*(found|damaged|missing)(?:\.\s*Found\s*(\d+)\s*of\s*(\d+)\s*data\s*blocks)?',
+      caseSensitive: false,
+    );
+
+    final blocksAvailRegex = RegExp(
+      r'You have (\d+) out of (\d+) data blocks available',
+      caseSensitive: false,
+    );
+
+    final recAvailRegex = RegExp(
+      r'You have (\d+) recovery blocks available',
+      caseSensitive: false,
+    );
+
+    final recNeededRegex = RegExp(
+      r'You need (\d+) more recovery blocks to be able to repair',
+      caseSensitive: false,
+    );
+
+    final repairPossibleRegex = RegExp(
+      r'Repair is (possible|not possible)',
+      caseSensitive: false,
+    );
+
+    final lines = output.split('\n');
+    for (final line in lines) {
+      final targetMatch = targetRegex.firstMatch(line);
+      if (targetMatch != null) {
+        final fileName = targetMatch.group(1)!;
+        final statusStr = targetMatch.group(2)!.toLowerCase();
+        final availStr = targetMatch.group(3);
+        final totalStr = targetMatch.group(4);
+
+        final Par2TargetFileStatus fileStatus;
+        if (statusStr == 'found') {
+          fileStatus = Par2TargetFileStatus.found;
+        } else if (statusStr == 'damaged') {
+          fileStatus = Par2TargetFileStatus.damaged;
+        } else {
+          fileStatus = Par2TargetFileStatus.missing;
+        }
+
+        files.add(
+          Par2FileStatus(
+            fileName: fileName,
+            status: fileStatus,
+            availableBlocks: availStr != null ? int.tryParse(availStr) : null,
+            totalBlocks: totalStr != null ? int.tryParse(totalStr) : null,
+          ),
+        );
+        continue;
+      }
+
+      final blocksMatch = blocksAvailRegex.firstMatch(line);
+      if (blocksMatch != null) {
+        availableBlocks = int.tryParse(blocksMatch.group(1)!);
+        totalBlocks = int.tryParse(blocksMatch.group(2)!);
+      }
+
+      final recAvailMatch = recAvailRegex.firstMatch(line);
+      if (recAvailMatch != null) {
+        recoveryBlocksAvailable = int.tryParse(recAvailMatch.group(1)!);
+      }
+
+      final recNeededMatch = recNeededRegex.firstMatch(line);
+      if (recNeededMatch != null) {
+        recoveryBlocksNeeded = int.tryParse(recNeededMatch.group(1)!);
+      }
+
+      final repairMatch = repairPossibleRegex.firstMatch(line);
+      if (repairMatch != null) {
+        isRepairPossible = repairMatch.group(1)!.toLowerCase() == 'possible';
+      }
+    }
+
+    return Par2VerifyReport(
+      state: state,
+      files: files,
+      availableBlocks: availableBlocks,
+      totalBlocks: totalBlocks,
+      recoveryBlocksAvailable: recoveryBlocksAvailable,
+      recoveryBlocksNeeded: recoveryBlocksNeeded,
+      isRepairPossible: isRepairPossible,
+      rawOutput: output,
+    );
+  }
+
+  static Par2VerifyState _inferStateFromOutput(String output) {
+    if (output.contains('All files are correct, repair is not required')) {
+      return Par2VerifyState.ok;
+    }
+    if (output.contains('Repair is possible')) {
+      return Par2VerifyState.damagedRepairable;
+    }
+    if (output.contains('Repair is not possible')) {
+      return Par2VerifyState.damagedNotRepairable;
+    }
+    if (output.contains('Repair is required')) {
+      return Par2VerifyState.damagedRepairable;
+    }
+    return Par2VerifyState.error;
+  }
+
+  /// Helper to locate backup files created by par2 during repair (e.g. `<filename>.1`, `<filename>.2`).
+  static File? findBackupFile(String targetFilePath) {
+    try {
+      final file = File(targetFilePath);
+      final dir = file.parent;
+      final base = file.path.split('/').last;
+
+      if (!dir.existsSync()) return null;
+
+      // Look for highest numbered backup <base>.<N>
+      final backupPattern = RegExp('^${RegExp.escape(base)}\\.(\\d+)\$');
+      File? latestBackup;
+      int maxNum = -1;
+
+      for (final entity in dir.listSync()) {
+        if (entity is File) {
+          final name = entity.path.split('/').last;
+          final match = backupPattern.firstMatch(name);
+          if (match != null) {
+            final num = int.tryParse(match.group(1)!) ?? 0;
+            if (num > maxNum) {
+              maxNum = num;
+              latestBackup = entity;
+            }
+          }
+        }
+      }
+      return latestBackup;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Validates inputs before running `par2 create`:

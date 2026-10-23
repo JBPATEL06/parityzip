@@ -78,6 +78,206 @@ void main() {
         './-odd.7z.par2',
       ]);
     });
+
+    test('builds verify args with spaces and unicode', () {
+      expect(Par2Service.buildVerifyArgs('rapport été ફાઇલ.par2'), [
+        'verify',
+        'rapport été ફાઇલ.par2',
+      ]);
+    });
+  });
+
+  group('Par2Service.buildRepairArgs', () {
+    test('builds repair args for normal par2 filename', () {
+      expect(Par2Service.buildRepairArgs('archive.7z.par2'), [
+        'repair',
+        'archive.7z.par2',
+      ]);
+    });
+
+    test('builds repair args with ./ prefix for leading dash', () {
+      expect(Par2Service.buildRepairArgs('-odd.7z.par2'), [
+        'repair',
+        './-odd.7z.par2',
+      ]);
+    });
+
+    test('builds repair args with spaces and unicode', () {
+      expect(Par2Service.buildRepairArgs('rapport été ફાઇલ.par2'), [
+        'repair',
+        'rapport été ફાઇલ.par2',
+      ]);
+    });
+  });
+
+  group('Par2Service.validatePar2Input', () {
+    test('validates successfully for existing .par2 file', () {
+      final res = Par2Service.validatePar2Input(
+        '/tmp/archive.7z.par2',
+        checkFileExists: (_) => true,
+        checkIsRegularFile: (_) => true,
+      );
+      expect(res.isValid, isTrue);
+      expect(res.errorMessage, isNull);
+    });
+
+    test('accepts uppercase .PAR2 extension and volume files', () {
+      final resUpper = Par2Service.validatePar2Input(
+        '/tmp/ARCHIVE.7Z.PAR2',
+        checkFileExists: (_) => true,
+        checkIsRegularFile: (_) => true,
+      );
+      expect(resUpper.isValid, isTrue);
+
+      final resVol = Par2Service.validatePar2Input(
+        '/tmp/archive.7z.vol000+01.par2',
+        checkFileExists: (_) => true,
+        checkIsRegularFile: (_) => true,
+      );
+      expect(resVol.isValid, isTrue);
+    });
+
+    test('rejects empty or whitespace path', () {
+      final res = Par2Service.validatePar2Input('');
+      expect(res.isValid, isFalse);
+      expect(res.errorMessage, contains('Please choose a .par2 file'));
+    });
+
+    test('rejects non-par2 extension', () {
+      final res = Par2Service.validatePar2Input(
+        '/tmp/archive.7z',
+        checkFileExists: (_) => true,
+        checkIsRegularFile: (_) => true,
+      );
+      expect(res.isValid, isFalse);
+      expect(res.errorMessage, contains('must have a .par2 extension'));
+    });
+
+    test('rejects non-existent file', () {
+      final res = Par2Service.validatePar2Input(
+        '/tmp/non_existent.par2',
+        checkFileExists: (_) => false,
+      );
+      expect(res.isValid, isFalse);
+      expect(res.errorMessage, contains('File does not exist'));
+    });
+
+    test('rejects directory even if named .par2', () {
+      final res = Par2Service.validatePar2Input(
+        '/tmp/folder.par2',
+        checkFileExists: (_) => true,
+        checkIsRegularFile: (_) => false,
+      );
+      expect(res.isValid, isFalse);
+      expect(res.errorMessage, contains('not a regular file'));
+    });
+  });
+
+  group('Par2Service.mapVerifyExitCode', () {
+    test('maps all exit codes correctly to states', () {
+      expect(Par2Service.mapVerifyExitCode(0), Par2VerifyState.ok);
+      expect(
+        Par2Service.mapVerifyExitCode(1),
+        Par2VerifyState.damagedRepairable,
+      );
+      expect(
+        Par2Service.mapVerifyExitCode(2),
+        Par2VerifyState.damagedNotRepairable,
+      );
+      expect(Par2Service.mapVerifyExitCode(4), Par2VerifyState.insufficientData);
+      expect(Par2Service.mapVerifyExitCode(3), Par2VerifyState.error);
+      expect(Par2Service.mapVerifyExitCode(5), Par2VerifyState.error);
+      expect(Par2Service.mapVerifyExitCode(6), Par2VerifyState.error);
+      expect(Par2Service.mapVerifyExitCode(255), Par2VerifyState.error);
+    });
+  });
+
+  group('Par2Service.parseVerifyReport', () {
+    test('parses clean verify output', () {
+      const output = '''
+Verifying source files:
+Opening: "test.bin"
+Target: "test.bin" - found.
+
+All files are correct, repair is not required.
+''';
+      final report = Par2Service.parseVerifyReport(output, exitCode: 0);
+      expect(report.state, Par2VerifyState.ok);
+      expect(report.files.length, 1);
+      expect(report.files.first.fileName, 'test.bin');
+      expect(report.files.first.status, Par2TargetFileStatus.found);
+      expect(report.isOk, isTrue);
+    });
+
+    test('parses damaged repairable output with block numbers', () {
+      const output = '''
+Target: "archive.7z" - damaged. Found 1999 of 2000 data blocks.
+
+Scanning extra files:
+
+
+Repair is required.
+1 file(s) exist but are damaged.
+You have 1999 out of 2000 data blocks available.
+You have 200 recovery blocks available.
+Repair is possible.
+You have an excess of 199 recovery blocks.
+1 recovery blocks will be used to repair.
+''';
+      final report = Par2Service.parseVerifyReport(output, exitCode: 1);
+      expect(report.state, Par2VerifyState.damagedRepairable);
+      expect(report.isRepairable, isTrue);
+      expect(report.files.length, 1);
+      expect(report.files.first.fileName, 'archive.7z');
+      expect(report.files.first.status, Par2TargetFileStatus.damaged);
+      expect(report.files.first.availableBlocks, 1999);
+      expect(report.files.first.totalBlocks, 2000);
+      expect(report.availableBlocks, 1999);
+      expect(report.totalBlocks, 2000);
+      expect(report.recoveryBlocksAvailable, 200);
+      expect(report.isRepairPossible, isTrue);
+    });
+
+    test('parses damaged not repairable output', () {
+      const output = '''
+Target: "data.bin" - damaged. Found 1199 of 2000 data blocks.
+
+Repair is required.
+1 file(s) exist but are damaged.
+You have 1199 out of 2000 data blocks available.
+You have 200 recovery blocks available.
+Repair is not possible.
+You need 601 more recovery blocks to be able to repair.
+''';
+      final report = Par2Service.parseVerifyReport(output, exitCode: 2);
+      expect(report.state, Par2VerifyState.damagedNotRepairable);
+      expect(report.isRepairable, isFalse);
+      expect(report.recoveryBlocksNeeded, 601);
+      expect(report.isRepairPossible, isFalse);
+    });
+
+    test('parses missing target file output', () {
+      const output = '''
+Target: "missing.7z" - missing.
+
+Repair is required.
+1 file(s) are missing.
+Repair is not possible.
+''';
+      final report = Par2Service.parseVerifyReport(output, exitCode: 2);
+      expect(report.state, Par2VerifyState.damagedNotRepairable);
+      expect(report.files.length, 1);
+      expect(report.files.first.fileName, 'missing.7z');
+      expect(report.files.first.status, Par2TargetFileStatus.missing);
+    });
+
+    test('handles unparseable or arbitrary garbage output without error', () {
+      const output = 'some random error garbage from stderr or crash\nSegmentation fault';
+      final report = Par2Service.parseVerifyReport(output, exitCode: 5);
+      expect(report.state, Par2VerifyState.error);
+      expect(report.files, isEmpty);
+      expect(report.rawOutput, output);
+    });
   });
 
   group('Par2Service.validateCreate', () {
