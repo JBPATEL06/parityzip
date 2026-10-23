@@ -123,6 +123,17 @@ void main() {
       expect(result.errorMessage, contains('Archive file does not exist'));
     });
 
+    test('succeeds when archive does not exist yet if requireArchiveExists is false', () {
+      final result = Par2Service.validateCreate(
+        redundancy: 10,
+        archiveFilePath: '/tmp/test/future.7z',
+        requireArchiveExists: false,
+        checkFileExists: (_) => false,
+        directoryEntries: [],
+      );
+      expect(result.isValid, isTrue);
+    });
+
     test('fails when <archive>.par2 already exists', () {
       final result = Par2Service.validateCreate(
         redundancy: 10,

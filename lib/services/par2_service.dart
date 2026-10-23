@@ -67,11 +67,12 @@ class Par2Service {
 
   /// Validates inputs before running `par2 create`:
   /// - Redundancy between 5 and 30
-  /// - Archive file exists
+  /// - Archive file exists (if [requireArchiveExists] is true)
   /// - No conflicting `<archive>.par2` or `<archive>.vol*.par2` already exist in the directory
   static Par2Validation validateCreate({
     required int redundancy,
     required String archiveFilePath,
+    bool requireArchiveExists = true,
     List<String>? directoryEntries,
     bool Function(String path)? checkFileExists,
   }) {
@@ -81,11 +82,13 @@ class Par2Service {
       );
     }
 
-    final fileExists = checkFileExists ?? (path) => File(path).existsSync();
-    if (!fileExists(archiveFilePath)) {
-      return Par2Validation.invalid(
-        "Archive file does not exist: '$archiveFilePath'.",
-      );
+    if (requireArchiveExists) {
+      final fileExists = checkFileExists ?? (path) => File(path).existsSync();
+      if (!fileExists(archiveFilePath)) {
+        return Par2Validation.invalid(
+          "Archive file does not exist: '$archiveFilePath'.",
+        );
+      }
     }
 
     final dir = File(archiveFilePath).parent.path;

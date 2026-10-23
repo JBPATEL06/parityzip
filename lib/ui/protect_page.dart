@@ -369,6 +369,7 @@ class _ProtectPageState extends State<ProtectPage> {
       par2Validation = Par2Service.validateCreate(
         redundancy: _redundancy.round(),
         archiveFilePath: potentialOutputPath,
+        requireArchiveExists: false,
         checkFileExists: (path) =>
             path != activeOutputPath && File(path).existsSync(),
       );
