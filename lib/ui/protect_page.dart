@@ -27,6 +27,67 @@ class _ProtectPageState extends State<ProtectPage> {
   );
   CompressionLevel _compressionLevel = CompressionLevel.normal;
   bool _isDragging = false;
+  JobStatus? _lastStatus;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final jobController = context.watch<JobController>();
+    final currentStatus = jobController.status;
+
+    if (_lastStatus == JobStatus.running &&
+        currentStatus != JobStatus.running) {
+      final result = jobController.lastResult;
+      final cancelledNote = jobController.cancelledNote;
+      final theme = Theme.of(context);
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final messenger = ScaffoldMessenger.of(context);
+        messenger.hideCurrentSnackBar();
+
+        if (currentStatus == JobStatus.success && result != null) {
+          final name = InputSelection.getBaseName(
+            result.outputPath ?? 'archive.7z',
+          );
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text(
+                result.hasWarnings
+                    ? 'Archive created with warnings: $name'
+                    : 'Archive created successfully: $name',
+              ),
+              action: SnackBarAction(
+                label: 'Open folder',
+                onPressed: () {
+                  if (result.outputPath != null) {
+                    ProgressCard.openFolder(result.outputPath!);
+                  }
+                },
+              ),
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        } else if (currentStatus == JobStatus.failure && result != null) {
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text(result.errorMessage ?? 'Archive creation failed.'),
+              backgroundColor: theme.colorScheme.error,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        } else if (cancelledNote != null) {
+          messenger.showSnackBar(
+            const SnackBar(
+              content: Text('Archive creation was cancelled.'),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      });
+    }
+    _lastStatus = currentStatus;
+  }
 
   @override
   void dispose() {
