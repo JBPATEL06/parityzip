@@ -12,6 +12,24 @@ import '../state/job_controller.dart';
 import 'widgets/log_panel.dart';
 import 'widgets/progress_card.dart';
 
+enum FeedbackType { success, warning, failure, info }
+
+class FeedbackMessage {
+  final FeedbackType type;
+  final String title;
+  final String? subtitle;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  FeedbackMessage({
+    required this.type,
+    required this.title,
+    this.subtitle,
+    this.actionLabel,
+    this.onAction,
+  });
+}
+
 class ProtectPage extends StatefulWidget {
   const ProtectPage({super.key});
 
@@ -28,6 +46,7 @@ class _ProtectPageState extends State<ProtectPage> {
   CompressionLevel _compressionLevel = CompressionLevel.normal;
   bool _isDragging = false;
   JobStatus? _lastStatus;
+  FeedbackMessage? _topFeedback;
 
   @override
   void didChangeDependencies() {
@@ -39,50 +58,48 @@ class _ProtectPageState extends State<ProtectPage> {
         currentStatus != JobStatus.running) {
       final result = jobController.lastResult;
       final cancelledNote = jobController.cancelledNote;
-      final theme = Theme.of(context);
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        final messenger = ScaffoldMessenger.of(context);
-        messenger.hideCurrentSnackBar();
 
         if (currentStatus == JobStatus.success && result != null) {
           final name = InputSelection.getBaseName(
             result.outputPath ?? 'archive.7z',
           );
-          messenger.showSnackBar(
-            SnackBar(
-              content: Text(
-                result.hasWarnings
-                    ? 'Archive created with warnings: $name'
-                    : 'Archive created successfully: $name',
-              ),
-              action: SnackBarAction(
-                label: 'Open folder',
-                onPressed: () {
-                  if (result.outputPath != null) {
-                    ProgressCard.openFolder(result.outputPath!);
-                  }
-                },
-              ),
-              duration: const Duration(seconds: 4),
-            ),
-          );
+          setState(() {
+            _selectedPaths.clear();
+            _nameController.text = 'archive';
+            _topFeedback = FeedbackMessage(
+              type: result.hasWarnings
+                  ? FeedbackType.warning
+                  : FeedbackType.success,
+              title: result.hasWarnings
+                  ? 'Archive created with warnings: $name'
+                  : 'Archive created successfully: $name',
+              subtitle: 'Saved to ${result.outputPath}',
+              actionLabel: 'Open folder',
+              onAction: () {
+                if (result.outputPath != null) {
+                  ProgressCard.openFolder(result.outputPath!);
+                }
+              },
+            );
+          });
         } else if (currentStatus == JobStatus.failure && result != null) {
-          messenger.showSnackBar(
-            SnackBar(
-              content: Text(result.errorMessage ?? 'Archive creation failed.'),
-              backgroundColor: theme.colorScheme.error,
-              duration: const Duration(seconds: 5),
-            ),
-          );
+          setState(() {
+            _topFeedback = FeedbackMessage(
+              type: FeedbackType.failure,
+              title: 'Compression failed',
+              subtitle: result.errorMessage ?? 'An unexpected error occurred.',
+            );
+          });
         } else if (cancelledNote != null) {
-          messenger.showSnackBar(
-            const SnackBar(
-              content: Text('Archive creation was cancelled.'),
-              duration: Duration(seconds: 3),
-            ),
-          );
+          setState(() {
+            _topFeedback = FeedbackMessage(
+              type: FeedbackType.info,
+              title: 'Archive creation was cancelled.',
+            );
+          });
         }
       });
     }
@@ -188,6 +205,87 @@ class _ProtectPageState extends State<ProtectPage> {
     }
   }
 
+  Widget _buildTopFeedbackBanner(
+    BuildContext context,
+    FeedbackMessage feedback,
+  ) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    final Color bgColor;
+    final Color textColor;
+    final IconData icon;
+
+    switch (feedback.type) {
+      case FeedbackType.success:
+        bgColor = colorScheme.secondaryContainer;
+        textColor = colorScheme.onSecondaryContainer;
+        icon = Icons.check_circle_outline;
+      case FeedbackType.warning:
+        bgColor = colorScheme.tertiaryContainer;
+        textColor = colorScheme.onTertiaryContainer;
+        icon = Icons.warning_amber_rounded;
+      case FeedbackType.failure:
+        bgColor = colorScheme.errorContainer;
+        textColor = colorScheme.onErrorContainer;
+        icon = Icons.error_outline;
+      case FeedbackType.info:
+        bgColor = colorScheme.surfaceContainerHighest;
+        textColor = theme.textTheme.bodyMedium?.color ?? Colors.black;
+        icon = Icons.info_outline;
+    }
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      color: bgColor,
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Icon(icon, color: textColor, size: 24),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    feedback.title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: textColor,
+                    ),
+                  ),
+                  if (feedback.subtitle != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      feedback.subtitle!,
+                      style: TextStyle(fontSize: 12, color: textColor),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (feedback.actionLabel != null && feedback.onAction != null) ...[
+              const SizedBox(width: 8),
+              FilledButton.tonal(
+                onPressed: feedback.onAction,
+                child: Text(feedback.actionLabel!),
+              ),
+            ],
+            const SizedBox(width: 4),
+            IconButton(
+              icon: Icon(Icons.close, size: 18, color: textColor),
+              tooltip: 'Dismiss',
+              onPressed: () => setState(() => _topFeedback = null),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final jobController = context.watch<JobController>();
@@ -225,6 +323,10 @@ class _ProtectPageState extends State<ProtectPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Top Notification Feedback Banner
+          if (_topFeedback != null)
+            _buildTopFeedbackBanner(context, _topFeedback!),
+
           // 1. Drop Zone & Pickers
           DropTarget(
             onDragDone: (detail) {
