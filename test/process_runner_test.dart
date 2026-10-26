@@ -1,10 +1,13 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:parityzip/core/process_runner.dart';
 
 void main() {
   group('ProcessRunner', () {
     test(
-      'FakeProcessRunner records invocations and emits canned events',
+      'FakeProcessRunner records invocations and emits canned events with Uint8List stdinData',
       () async {
         final fake = FakeProcessRunner(
           cannedEvents: const [
@@ -14,12 +17,13 @@ void main() {
           ],
         );
 
+        final secretBytes = Uint8List.fromList(utf8.encode('secret\n'));
         final events = await fake
             .run(
               '7z',
               ['a', 'archive.7z', 'file.txt'],
               workingDirectory: '/tmp',
-              stdinData: 'secret\n',
+              stdinData: secretBytes,
             )
             .toList();
 
@@ -30,7 +34,10 @@ void main() {
           equals(['a', 'archive.7z', 'file.txt']),
         );
         expect(fake.invocations.first.workingDirectory, equals('/tmp'));
-        expect(fake.invocations.first.stdinData, equals('secret\n'));
+        expect(
+          fake.invocations.first.stdinData,
+          equals(Uint8List.fromList(utf8.encode('secret\n'))),
+        );
 
         expect(events.length, equals(3));
         expect(events[0], equals(const StdoutEvent('processing...\n')));
@@ -67,6 +74,29 @@ void main() {
           events.any((e) => e is ExitCodeEvent && e.exitCode == 0),
           isTrue,
         );
+      },
+    );
+
+    test(
+      'RealProcessRunner writes stdinData and zeroes the Uint8List after writing',
+      () async {
+        const runner = RealProcessRunner();
+        final inputBytes = Uint8List.fromList(utf8.encode('piped-input\n'));
+
+        // Run 'cat' which reads stdin and outputs to stdout
+        final events = await runner.run(
+          'cat',
+          [],
+          stdinData: inputBytes,
+        ).toList();
+
+        // Check stdout received the input
+        final stdoutEvents = events.whereType<StdoutEvent>().toList();
+        final output = stdoutEvents.map((e) => e.text).join();
+        expect(output, contains('piped-input'));
+
+        // Verify that inputBytes was zeroed out in memory!
+        expect(inputBytes.every((b) => b == 0), isTrue);
       },
     );
   });

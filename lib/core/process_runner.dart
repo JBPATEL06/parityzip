@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 sealed class ProcessEvent {
   const ProcessEvent();
@@ -65,7 +66,7 @@ abstract class ProcessRunner {
     String exe,
     List<String> args, {
     String? workingDirectory,
-    String? stdinData,
+    Uint8List? stdinData,
   });
 }
 
@@ -77,7 +78,7 @@ class RealProcessRunner implements ProcessRunner {
     String exe,
     List<String> args, {
     String? workingDirectory,
-    String? stdinData,
+    Uint8List? stdinData,
   }) {
     late final StreamController<ProcessEvent> controller;
     Process? process;
@@ -94,9 +95,11 @@ class RealProcessRunner implements ProcessRunner {
           );
 
           if (stdinData != null) {
-            process!.stdin.write(stdinData);
+            process!.stdin.add(stdinData);
             await process!.stdin.flush();
             await process!.stdin.close();
+            // Zero the byte list immediately after writing
+            stdinData.fillRange(0, stdinData.length, 0);
           } else {
             // Always close stdin when no input is needed so tool never hangs
             await process!.stdin.close();
@@ -150,7 +153,7 @@ class FakeProcessInvocation {
   final String exe;
   final List<String> args;
   final String? workingDirectory;
-  final String? stdinData;
+  final Uint8List? stdinData;
 
   const FakeProcessInvocation({
     required this.exe,
@@ -167,7 +170,7 @@ class FakeProcessRunner implements ProcessRunner {
     String exe,
     List<String> args,
     String? workingDirectory,
-    String? stdinData,
+    Uint8List? stdinData,
   )?
   onRun;
 
@@ -178,14 +181,16 @@ class FakeProcessRunner implements ProcessRunner {
     String exe,
     List<String> args, {
     String? workingDirectory,
-    String? stdinData,
+    Uint8List? stdinData,
   }) {
+    final capturedStdin =
+        stdinData != null ? Uint8List.fromList(stdinData) : null;
     invocations.add(
       FakeProcessInvocation(
         exe: exe,
         args: List.unmodifiable(args),
         workingDirectory: workingDirectory,
-        stdinData: stdinData,
+        stdinData: capturedStdin,
       ),
     );
 

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
@@ -805,6 +806,7 @@ class JobController extends ChangeNotifier {
     required List<String> args,
     required String workingDir,
     required void Function(String text) onProgress,
+    Uint8List? stdinData,
   }) async {
     final completer = Completer<void>();
     _activeCompleter = completer;
@@ -815,7 +817,7 @@ class JobController extends ChangeNotifier {
       exe,
       args,
       workingDirectory: workingDir,
-      stdinData: null,
+      stdinData: stdinData,
     );
 
     _subscription = stream.listen(
