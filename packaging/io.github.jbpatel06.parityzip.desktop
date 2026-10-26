@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=ParityZip
+GenericName=Archive and Recovery Tool
+Comment=Compress archives with 7-Zip and create self-healing PAR2 recovery data
+Exec=parityzip %U
+Icon=io.github.jbpatel06.parityzip
+Terminal=false
+Categories=Utility;Archiving;Compression;
+StartupWMClass=io.github.jbpatel06.parityzip
+Keywords=7z;zip;par2;parity;recovery;repair;archive;compression;

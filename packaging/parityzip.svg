@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Background Gradient: Ubuntu Orange to Aubergine -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#E95420"/>
+      <stop offset="50%" stop-color="#AE3855"/>
+      <stop offset="100%" stop-color="#77216F"/>
+    </linearGradient>
+
+    <!-- Shield Gradient -->
+    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#E6E6E6"/>
+    </linearGradient>
+
+    <!-- Parity Emblem Gradient -->
+    <linearGradient id="emblemGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#E95420"/>
+      <stop offset="100%" stop-color="#77216F"/>
+    </linearGradient>
+
+    <!-- Drop Shadow Filter -->
+    <filter id="dropShadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+    <filter id="subtleShadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <!-- Rounded App Icon Background -->
+  <rect x="32" y="32" width="448" height="448" rx="96" ry="96" fill="url(#bgGrad)" filter="url(#dropShadow)"/>
+
+  <!-- Subtle Inner Border Highlight -->
+  <rect x="33" y="33" width="446" height="446" rx="95" ry="95" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-opacity="0.2"/>
+
+  <!-- Left Side: Archive Compression Teeth (Zipper pattern) -->
+  <g fill="#FFFFFF" fill-opacity="0.35">
+    <rect x="76" y="112" width="44" height="20" rx="4"/>
+    <rect x="76" y="152" width="44" height="20" rx="4"/>
+    <rect x="76" y="192" width="44" height="20" rx="4"/>
+    <rect x="76" y="232" width="44" height="20" rx="4"/>
+    <rect x="76" y="272" width="44" height="20" rx="4"/>
+    <rect x="76" y="312" width="44" height="20" rx="4"/>
+    <rect x="76" y="352" width="44" height="20" rx="4"/>
+    <rect x="76" y="392" width="44" height="20" rx="4"/>
+  </g>
+
+  <!-- Central Element: Protective Parity Shield -->
+  <g filter="url(#dropShadow)">
+    <path d="M256,104 C328,104 380,132 380,188 C380,300 292,388 256,416 C220,388 132,300 132,188 C132,132 184,104 256,104 Z"
+          fill="url(#shieldGrad)"/>
+  </g>
+
+  <!-- Shield Core: Parity & Security Motif -->
+  <!-- Parity Matrix Grid / Checkmark Emblem -->
+  <g filter="url(#subtleShadow)">
+    <!-- Protective Vault / Archive Zipper Ring -->
+    <circle cx="256" cy="224" r="54" fill="url(#emblemGrad)"/>
+    <circle cx="256" cy="224" r="38" fill="#FFFFFF"/>
+    <circle cx="256" cy="224" r="22" fill="url(#emblemGrad)"/>
+
+    <!-- Parity Check Symbol (Bold P / Check) -->
+    <path d="M228,296 L284,296 C302,296 314,308 314,324 C314,340 302,352 284,352 L248,352 L248,376 L228,376 Z M248,312 L248,336 L282,336 C290,336 296,330 296,324 C296,318 290,312 282,312 Z"
+          fill="url(#emblemGrad)"/>
+  </g>
+
+  <!-- Recovery Block Sparks (Parity redundancy indicator dots) -->
+  <circle cx="340" cy="180" r="10" fill="#00E5FF" filter="url(#subtleShadow)"/>
+  <circle cx="356" cy="220" r="10" fill="#00E5FF" filter="url(#subtleShadow)"/>
+  <circle cx="350" cy="264" r="10" fill="#00E5FF" filter="url(#subtleShadow)"/>
+</svg>
