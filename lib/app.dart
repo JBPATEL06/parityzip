@@ -11,6 +11,7 @@ import 'state/navigation_controller.dart';
 import 'ui/protect_page.dart';
 import 'ui/repair_page.dart';
 import 'ui/verify_page.dart';
+import 'ui/widgets/about_dialog.dart';
 import 'ui/widgets/tool_banner.dart';
 
 class ParityZipApp extends StatelessWidget {
@@ -104,9 +105,17 @@ class _AppShellState extends State<AppShell>
 
   @override
   Widget build(BuildContext context) {
+    final toolStatus = context.watch<ToolStatus>();
     return Scaffold(
       appBar: AppBar(
         title: const Text('ParityZip'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.info_outline),
+            tooltip: 'About ParityZip',
+            onPressed: () => ParityZipAboutDialog.show(context, toolStatus),
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
