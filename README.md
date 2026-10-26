@@ -105,13 +105,14 @@ ParityZip does **not** embed recovery data inside the archive file. Instead, it 
 
 ---
 
-## Honest Limitations
+## Honest Limitations & Testing Status
 
+- **Tested Platform:** Tested on **Ubuntu 26.04** only. Every other Linux distribution or release (including Ubuntu 22.04 LTS, Ubuntu 24.04 LTS, Debian, Fedora, Arch) is currently **untested**.
+- **ZIP on Windows / macOS Untested:** Cross-platform warning heuristics check for common Windows-incompatible filenames and symlinks in ZIP archives; extraction behavior on Windows and macOS is **untested** by the maintainer.
+- **Package Managers Untested:** Package manager support for Fedora (`dnf`) and Arch Linux (`pacman`) is implemented based on upstream documentation and is **untested**.
 - **Separate Parity Files:** Recovery data is stored in separate `.par2` files next to the archive, not embedded into the `.7z` container itself.
 - **Encryption:** Encryption is supported for 7z archives only (using AES-256 with header encryption). ZIP encryption is not supported.
 - **No Password Recovery:** Because strong AES-256 encryption is used, a lost or forgotten password cannot be recovered under any circumstances.
-- **Windows / macOS Archive Compatibility:** Cross-platform warning heuristics check for common Windows-incompatible filenames and symlinks in ZIP archives; extraction behavior on Windows and macOS has not been directly tested by the maintainer.
-- **Package Manager Detection:** Fedora (`dnf`) and Arch (`pacman`) package manager detections are implemented based on documentation and have not been validated in end-to-end VM tests.
 - **Memory Lifetime:** While raw stdin byte buffers are zeroed in memory immediately after writing to the 7-Zip process, Dart strings are immutable objects managed by the Dart VM garbage collector and cannot be manually wiped from RAM. ParityZip clears form fields and job controller references immediately upon job completion, failure, or cancellation to minimize memory exposure.
 
 ---

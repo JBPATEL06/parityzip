@@ -265,8 +265,9 @@ if [ -d "${INSTALL_DIR}" ]; then
   if [ -f "${INSTALL_DIR}/${MARKER_FILE_NAME}" ]; then
     rm -rf "${INSTALL_DIR:?}"
   else
-    echo "WARNING: Existing ${INSTALL_DIR} does not contain marker. Replacing cleanly."
-    rm -rf "${INSTALL_DIR:?}"
+    echo "ERROR: Existing ${INSTALL_DIR} does not contain marker file ${MARKER_FILE_NAME}!" >&2
+    echo "       Refusing to delete directory for safety. Please inspect or remove it manually." >&2
+    exit 1
   fi
 fi
 mv "${TEMP_INSTALL}" "${INSTALL_DIR}"
@@ -276,8 +277,19 @@ mv "${TEMP_INSTALL}" "${INSTALL_DIR}"
 # ------------------------------------------------------------------------------
 _log "Creating executable symlink in ${BIN_DIR}..."
 mkdir -p "${BIN_DIR}"
-rm -f "${BIN_LINK}"
-ln -sf "${INSTALL_DIR}/parityzip" "${BIN_LINK}"
+if [ -L "${BIN_LINK}" ]; then
+  link_target="$(readlink -f "${BIN_LINK}" || true)"
+  if [[ "${link_target}" == "${INSTALL_DIR}"* ]]; then
+    rm -f "${BIN_LINK}"
+    ln -sf "${INSTALL_DIR}/parityzip" "${BIN_LINK}"
+  else
+    echo "WARNING: ${BIN_LINK} exists but points elsewhere (${link_target}), skipping symlink creation." >&2
+  fi
+elif [ -e "${BIN_LINK}" ]; then
+  echo "WARNING: ${BIN_LINK} exists and is not a symlink, skipping symlink creation for safety." >&2
+else
+  ln -sf "${INSTALL_DIR}/parityzip" "${BIN_LINK}"
+fi
 
 # ------------------------------------------------------------------------------
 # 7. Install Desktop Entry and Icons

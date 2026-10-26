@@ -31,3 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - One-command user installer (`install.sh`) supporting offline/local installations and non-interactive runs.
   - Clean uninstaller (`uninstall.sh`).
   - Standalone relocatable Linux release bundle (`parityzip-v0.1.0-linux-x64.tar.gz`).
+
+### Testing Status
+- Tested on **Ubuntu 26.04** only; all other Linux distributions and releases are **untested**.
+- ZIP extraction on Windows and macOS is **untested**.
+- Package manager integration for Fedora (`dnf`) and Arch Linux (`pacman`) is **untested**.
