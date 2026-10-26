@@ -1,0 +1,30 @@
+MIT License
+
+Copyright (c) 2026 Bhanderi Jeel and ParityZip contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+Third-Party Software Notice:
+ParityZip interacts with external command-line utilities (7-Zip / 7zz / 7za and par2cmdline).
+These tools are independent third-party programs installed through your Linux distribution's
+package manager, and are not bundled or distributed within ParityZip.
+- 7-Zip (7zz/7z/7za): Igor Pavlov (GNU LGPL with unRAR license restrictions / BSD-3-Clause)
+- par2cmdline: Peter Brian Clements, Willem van Waarde, Marcel Partap, and contributors (GNU GPL-2.0-or-later)
