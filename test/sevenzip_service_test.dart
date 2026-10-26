@@ -238,4 +238,75 @@ WARNING: Cannot open 1 file
       expect(warnings[1], equals('WARNING: Cannot open 1 file'));
     });
   });
+
+  group('SevenZipService - encryption arguments and safety', () {
+    test(
+      'buildCreateArgs with encrypt: true adds -mhe=on and bare -p for 7z',
+      () {
+        final args = SevenZipService.buildCreateArgs(
+          format: ArchiveFormat.sevenZip,
+          level: CompressionLevel.normal,
+          outputFileName: '/tmp/test.7z',
+          names: ['file.txt'],
+          encrypt: true,
+        );
+
+        expect(args, contains('-mhe=on'));
+        expect(args, contains('-p'));
+        expect(args.where((a) => a.startsWith('-p')).length, equals(1));
+        expect(args.firstWhere((a) => a.startsWith('-p')), equals('-p'));
+      },
+    );
+
+    test('argument list NEVER contains the password for diverse passwords', () {
+      final passwords = [
+        'simple_pass',
+        'password with spaces',
+        'Tést Pass ફા 123!',
+        '-leadingDashPass',
+        'quote"and\'pass',
+        'back\\slash/pass',
+        'A' * 200,
+      ];
+
+      for (final pwd in passwords) {
+        final args = SevenZipService.buildCreateArgs(
+          format: ArchiveFormat.sevenZip,
+          level: CompressionLevel.maximum,
+          outputFileName: '/tmp/test.7z',
+          names: ['file.txt'],
+          encrypt: true,
+        );
+
+        // Verify that NO argument contains the password string or -p<password>
+        for (final arg in args) {
+          expect(arg.contains(pwd), isFalse);
+          if (arg.startsWith('-p')) {
+            expect(arg, equals('-p')); // only bare -p
+          }
+        }
+      }
+    });
+
+    test(
+      'buildCreateArgs with encrypt: true and ZIP format throws ArgumentError',
+      () {
+        expect(
+          () => SevenZipService.buildCreateArgs(
+            format: ArchiveFormat.zip,
+            level: CompressionLevel.normal,
+            outputFileName: '/tmp/test.zip',
+            names: ['file.txt'],
+            encrypt: true,
+          ),
+          throwsArgumentError,
+        );
+      },
+    );
+
+    test('buildTestArgs returns 7z t arguments', () {
+      final args = SevenZipService.buildTestArgs('/tmp/archive.7z');
+      expect(args, equals(['t', '-bsp1', '/tmp/archive.7z']));
+    });
+  });
 }

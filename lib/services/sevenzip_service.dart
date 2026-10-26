@@ -20,7 +20,12 @@ class SevenZipService {
     required CompressionLevel level,
     required String outputFileName,
     required List<String> names,
+    bool encrypt = false,
   }) {
+    if (encrypt && format == ArchiveFormat.zip) {
+      throw ArgumentError('Encryption is only supported for 7z format.');
+    }
+
     final sanitizedNames = names.map((name) {
       if (name.startsWith('-')) {
         return './$name';
@@ -30,7 +35,13 @@ class SevenZipService {
 
     final extraSwitches = format == ArchiveFormat.zip
         ? ['-mm=Deflate', '-mx=${level.mx}', '-bsp1', '-mcu=on', '-spd', '-snl']
-        : ['-mx=${level.mx}', '-bsp1', '-spd', '-snl'];
+        : [
+            '-mx=${level.mx}',
+            '-bsp1',
+            '-spd',
+            '-snl',
+            if (encrypt) ...['-mhe=on', '-p'],
+          ];
 
     return [
       'a',
@@ -38,6 +49,14 @@ class SevenZipService {
       ...extraSwitches,
       outputFileName,
       ...sanitizedNames,
+    ];
+  }
+
+  static List<String> buildTestArgs(String archiveFilePath) {
+    return [
+      't',
+      '-bsp1',
+      archiveFilePath,
     ];
   }
 

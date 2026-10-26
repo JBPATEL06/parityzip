@@ -60,5 +60,33 @@ void main() {
 
       expect(notifications, equals(3));
     });
+
+    test('redacts secret password string from added text and fullText', () {
+      final controller = LogController();
+      controller.setRedactSecret('MySuperSecretPassword123');
+
+      controller.addLine(
+        'User entered command with MySuperSecretPassword123 as arg',
+      );
+      controller.addLines([
+        'Error: failed with password MySuperSecretPassword123!',
+        'Normal line without secret',
+      ]);
+
+      expect(
+        controller.lines[0],
+        equals('User entered command with *** as arg'),
+      );
+      expect(controller.lines[1], equals('Error: failed with password ***!'));
+      expect(controller.lines[2], equals('Normal line without secret'));
+
+      expect(controller.fullText, isNot(contains('MySuperSecretPassword123')));
+      expect(controller.fullText, contains('***'));
+
+      // Clearing secret returns to normal adding
+      controller.setRedactSecret(null);
+      controller.addLine('Now secret MySuperSecretPassword123 is not redacted');
+      expect(controller.lines.last, contains('MySuperSecretPassword123'));
+    });
   });
 }
