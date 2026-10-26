@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:parityzip/core/input_selection.dart';
+import 'package:parityzip/core/models.dart';
 import 'package:parityzip/core/process_runner.dart';
 import 'package:parityzip/services/par2_service.dart';
 import 'package:parityzip/services/sevenzip_service.dart';
@@ -845,5 +848,188 @@ void main() {
         tempDir.deleteSync(recursive: true);
       },
     );
+
+    group('Encryption pipeline (M5)', () {
+      const validSelection = InputSelection(
+        selectedPaths: ['/tmp/parent/file.txt'],
+        outputDirectory: '/tmp/output',
+        archiveName: 'out',
+      );
+      final validation = validSelection.validate(
+        checkFileExists: (_) => false,
+        checkDirExists: (_) => false,
+      );
+
+      test('ZIP + encrypt rejected', () async {
+        final logController = LogController();
+        final fakeRunner = FakeProcessRunner();
+        final controller = JobController(
+          processRunner: fakeRunner,
+          logController: logController,
+        );
+
+        final zipSelection = const InputSelection(
+          selectedPaths: ['/tmp/parent/file.txt'],
+          outputDirectory: '/tmp/output',
+          archiveName: 'out',
+          format: ArchiveFormat.zip,
+        ).validate(
+          checkFileExists: (_) => false,
+          checkDirExists: (_) => false,
+        );
+
+        await controller.startProtectionPipeline(
+          sevenZipExe: '7z',
+          validation: zipSelection,
+          level: CompressionLevel.normal,
+          format: ArchiveFormat.zip,
+          createRecoveryData: false,
+          encrypt: true,
+          password: 'secret_password_123',
+        );
+
+        expect(controller.status, equals(JobStatus.failure));
+        expect(
+          controller.lastResult!.errorMessage,
+          contains('ZIP format does not support encryption'),
+        );
+        expect(fakeRunner.invocations, isEmpty);
+      });
+
+      test(
+        'pipeline order including step 4, stdin bytes match spike format, stdinData never reaches logs',
+        () async {
+          final logController = LogController();
+          const testPassword = 'MySecretPass123!';
+
+          final fakeRunner = FakeProcessRunner(
+            onRun: (exe, args, workingDirectory, stdinData) async* {
+              if (args.contains('a')) {
+                yield const StdoutEvent('100%\nEverything is Ok\n');
+                yield const ExitCodeEvent(0);
+              } else if (args.contains('create')) {
+                yield const StdoutEvent('Constructing: 100.0%\r');
+                yield const ExitCodeEvent(0);
+              } else if (args.contains('verify')) {
+                yield const StdoutEvent(
+                  'All files are correct, repair is not required.\n',
+                );
+                yield const ExitCodeEvent(0);
+              } else if (args.contains('t')) {
+                yield const StdoutEvent('Testing archive:\nEverything is Ok\n');
+                yield const ExitCodeEvent(0);
+              }
+            },
+          );
+
+          final controller = JobController(
+            processRunner: fakeRunner,
+            logController: logController,
+            getFileSize: (_) => 50000,
+            getPar2Summary: (path, size) => const Par2Summary(
+              fileCount: 3,
+              totalBytes: 5000,
+              overheadPercent: 10.0,
+            ),
+          );
+
+          await controller.startProtectionPipeline(
+            sevenZipExe: '7z',
+            par2Exe: 'par2',
+            validation: validation,
+            level: CompressionLevel.normal,
+            createRecoveryData: true,
+            redundancy: 10,
+            encrypt: true,
+            password: testPassword,
+          );
+
+          expect(controller.status, equals(JobStatus.success));
+          expect(controller.lastResult!.isEncrypted, isTrue);
+          expect(controller.lastResult!.isSuccess, isTrue);
+          expect(controller.totalSteps, equals(4));
+
+          // Invocations:
+          // 0: 7z a with -mhe=on, -p
+          // 1: par2 c
+          // 2: par2 v
+          // 3: 7z t
+          expect(fakeRunner.invocations.length, equals(4));
+          expect(fakeRunner.invocations[0].exe, equals('7z'));
+          expect(fakeRunner.invocations[0].args, contains('-mhe=on'));
+          expect(fakeRunner.invocations[0].args, contains('-p'));
+          // stdin bytes match spike format: exactly "<password>\n"
+          expect(
+            fakeRunner.invocations[0].stdinData,
+            equals(Uint8List.fromList(utf8.encode('$testPassword\n'))),
+          );
+
+          expect(fakeRunner.invocations[1].exe, equals('par2'));
+          expect(fakeRunner.invocations[1].args, contains('create'));
+
+          expect(fakeRunner.invocations[2].exe, equals('par2'));
+          expect(fakeRunner.invocations[2].args, contains('verify'));
+
+          expect(fakeRunner.invocations[3].exe, equals('7z'));
+          expect(
+            fakeRunner.invocations[3].args,
+            equals(['t', '-bsp1', '/tmp/output/out.7z']),
+          );
+          expect(
+            fakeRunner.invocations[3].stdinData,
+            equals(Uint8List.fromList(utf8.encode('$testPassword\n'))),
+          );
+
+          // stdinData NEVER reaches logs
+          expect(logController.fullText, isNot(contains(testPassword)));
+        },
+      );
+
+      test('failing step 4 keeps files and reports clear warning', () async {
+        final logController = LogController();
+        var deletedFile = false;
+
+        final fakeRunner = FakeProcessRunner(
+          onRun: (exe, args, workingDirectory, stdinData) async* {
+            if (args.contains('a')) {
+              yield const ExitCodeEvent(0);
+            } else if (args.contains('t')) {
+              // Simulate step 4 failure (e.g. archive verification error)
+              yield const StdoutEvent(
+                'ERROR: Cannot open encrypted archive.\n',
+              );
+              yield const ExitCodeEvent(2);
+            }
+          },
+        );
+
+        final controller = JobController(
+          processRunner: fakeRunner,
+          logController: logController,
+          deleteFile: (_) => deletedFile = true,
+          getFileSize: (_) => 1000,
+        );
+
+        await controller.startProtectionPipeline(
+          sevenZipExe: '7z',
+          validation: validation,
+          level: CompressionLevel.normal,
+          createRecoveryData: false,
+          encrypt: true,
+          password: 'pass',
+        );
+
+        // All files KEPT (deleteFile never called)
+        expect(deletedFile, isFalse);
+        expect(controller.status, equals(JobStatus.success));
+        expect(controller.lastResult!.hasWarnings, isTrue);
+        expect(
+          controller.lastResult!.warnings,
+          contains(
+            'Archive test with password reported a warning or failed (exit code 2).',
+          ),
+        );
+      });
+    });
   });
 }

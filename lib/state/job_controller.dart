@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -27,9 +28,11 @@ class JobResult {
   final bool? par2Verified;
   final String? recoveryNote;
   final ArchiveFormat format;
+  final bool isEncrypted;
 
   const JobResult.success({
     this.format = ArchiveFormat.sevenZip,
+    this.isEncrypted = false,
     required this.outputPath,
     required this.outputSizeBytes,
     this.warnings = const [],
@@ -43,6 +46,7 @@ class JobResult {
 
   const JobResult.successWithWarnings({
     this.format = ArchiveFormat.sevenZip,
+    this.isEncrypted = false,
     required this.outputPath,
     required this.outputSizeBytes,
     required this.warnings,
@@ -56,6 +60,7 @@ class JobResult {
 
   const JobResult.failure({
     this.format = ArchiveFormat.sevenZip,
+    this.isEncrypted = false,
     required this.exitCode,
     required this.errorMessage,
     this.outputPath,
@@ -189,6 +194,7 @@ class JobController extends ChangeNotifier {
   /// Step 1: Compress with 7z (or ZIP)
   /// Step 2: Create recovery data with par2 (if enabled)
   /// Step 3: Verify recovery data with par2 (if enabled)
+  /// Step 4: Verify encrypted archive with password (if encrypted)
   Future<void> startProtectionPipeline({
     required String sevenZipExe,
     String? par2Exe,
@@ -197,6 +203,8 @@ class JobController extends ChangeNotifier {
     ArchiveFormat format = ArchiveFormat.sevenZip,
     required bool createRecoveryData,
     int redundancy = 10,
+    bool encrypt = false,
+    String? password,
   }) async {
     if (_status == JobStatus.running) return;
 
@@ -204,8 +212,34 @@ class JobController extends ChangeNotifier {
       _status = JobStatus.failure;
       _lastResult = JobResult.failure(
         format: format,
+        isEncrypted: encrypt,
         exitCode: -1,
         errorMessage: validation.errorMessage ?? 'Invalid input configuration.',
+      );
+      notifyListeners();
+      return;
+    }
+
+    if (encrypt && format == ArchiveFormat.zip) {
+      _status = JobStatus.failure;
+      _lastResult = JobResult.failure(
+        format: format,
+        isEncrypted: false,
+        exitCode: -1,
+        errorMessage:
+            'ZIP format does not support encryption. Please select 7z format.',
+      );
+      notifyListeners();
+      return;
+    }
+
+    if (encrypt && (password == null || password.isEmpty)) {
+      _status = JobStatus.failure;
+      _lastResult = JobResult.failure(
+        format: format,
+        isEncrypted: false,
+        exitCode: -1,
+        errorMessage: 'A password is required for encrypted archives.',
       );
       notifyListeners();
       return;
@@ -218,7 +252,7 @@ class JobController extends ChangeNotifier {
 
     final shouldCreatePar2 = createRecoveryData && par2Exe != null;
     _currentJobType = JobType.protect;
-    _totalSteps = shouldCreatePar2 ? 3 : 1;
+    _totalSteps = (shouldCreatePar2 ? 3 : 1) + (encrypt ? 1 : 0);
     _currentStep = 1;
 
     _status = JobStatus.running;
@@ -233,216 +267,288 @@ class JobController extends ChangeNotifier {
     _cancelled = false;
     notifyListeners();
 
+    if (encrypt) {
+      logController.setRedactSecret(password);
+    }
+
     final warnings = <String>[];
 
-    // ==========================================
-    // STEP 1: Compress
-    // ==========================================
-    final sevenZipArgs = SevenZipService.buildCreateArgs(
-      format: format,
-      level: level,
-      outputFileName: outputPath,
-      names: names,
-    );
-
-    logController.addLine(
-      '>>> [Step 1/$_totalSteps] Running 7-Zip: $sevenZipExe ${sevenZipArgs.join(' ')} (cwd: $workingDir)',
-    );
-
-    final step1ExitCode = await _runStepProcess(
-      exe: sevenZipExe,
-      args: sevenZipArgs,
-      workingDir: workingDir,
-      onProgress: (text) {
-        final percent = SevenZipService.parseProgress(text);
-        if (percent != null) {
-          _progress = (percent.clamp(0, 100)) / 100.0;
-          _statusMessage = _totalSteps > 1
-              ? 'Step 1 of $_totalSteps: Compressing... $percent%'
-              : 'Compressing... $percent%';
-          notifyListeners();
-        }
-        warnings.addAll(SevenZipService.parseWarnings(text));
-      },
-    );
-
-    if (_cancelled) {
-      return;
-    }
-
-    final sevenZipOutcome = SevenZipService.mapExitCode(step1ExitCode);
-    if (sevenZipOutcome == ExitCodeOutcome.failure) {
-      _cleanupCreatedFile(outputPath);
-      _status = JobStatus.failure;
-      _progress = null;
-      _statusMessage = 'Compression failed (exit code $step1ExitCode).';
-      _lastResult = JobResult.failure(
+    try {
+      // ==========================================
+      // STEP 1: Compress
+      // ==========================================
+      final sevenZipArgs = SevenZipService.buildCreateArgs(
         format: format,
-        exitCode: step1ExitCode,
-        errorMessage:
-            '7-Zip failed with exit code $step1ExitCode. Please check the log below for details.',
-        warnings: warnings,
+        level: level,
+        outputFileName: outputPath,
+        names: names,
+        encrypt: encrypt,
       );
+
+      final step1StdinBytes = encrypt
+          ? Uint8List.fromList(utf8.encode('$password\n'))
+          : null;
+
       logController.addLine(
-        '>>> Compression failed with exit code $step1ExitCode',
+        '>>> [Step 1/$_totalSteps] Running 7-Zip: $sevenZipExe ${sevenZipArgs.join(' ')} (cwd: $workingDir)',
       );
-      notifyListeners();
-      return;
-    } else if (sevenZipOutcome == ExitCodeOutcome.cancelled) {
-      _cleanupCreatedFile(outputPath);
-      _finishCancelled('Cancelled');
-      return;
-    }
 
-    final archiveSize = _getFileSize(outputPath);
-    logController.addLine(
-      '>>> [Step 1/$_totalSteps] Archive completed: $outputPath ($archiveSize bytes)',
-    );
+      final step1ExitCode = await _runStepProcess(
+        exe: sevenZipExe,
+        args: sevenZipArgs,
+        workingDir: workingDir,
+        stdinData: step1StdinBytes,
+        onProgress: (text) {
+          final percent = SevenZipService.parseProgress(text);
+          if (percent != null) {
+            _progress = (percent.clamp(0, 100)) / 100.0;
+            _statusMessage = _totalSteps > 1
+                ? 'Step 1 of $_totalSteps: Compressing... $percent%'
+                : 'Compressing... $percent%';
+            notifyListeners();
+          }
+          warnings.addAll(SevenZipService.parseWarnings(text));
+        },
+      );
 
-    // If recovery data is not requested, finish now
-    if (!shouldCreatePar2) {
+      if (_cancelled) {
+        return;
+      }
+
+      final sevenZipOutcome = SevenZipService.mapExitCode(step1ExitCode);
+      if (sevenZipOutcome == ExitCodeOutcome.failure) {
+        _cleanupCreatedFile(outputPath);
+        _status = JobStatus.failure;
+        _progress = null;
+        _statusMessage = 'Compression failed (exit code $step1ExitCode).';
+        _lastResult = JobResult.failure(
+          format: format,
+          isEncrypted: encrypt,
+          exitCode: step1ExitCode,
+          errorMessage:
+              '7-Zip failed with exit code $step1ExitCode. Please check the log below for details.',
+          warnings: warnings,
+        );
+        logController.addLine(
+          '>>> Compression failed with exit code $step1ExitCode',
+        );
+        notifyListeners();
+        return;
+      } else if (sevenZipOutcome == ExitCodeOutcome.cancelled) {
+        _cleanupCreatedFile(outputPath);
+        _finishCancelled('Cancelled');
+        return;
+      }
+
+      final archiveSize = _getFileSize(outputPath);
+      logController.addLine(
+        '>>> [Step 1/$_totalSteps] Archive completed: $outputPath ($archiveSize bytes)',
+      );
+
+      Par2Summary? summary;
+      bool? par2Verified;
+
+      // ==========================================
+      // STEPS 2 & 3: Recovery Data (if requested)
+      // ==========================================
+      if (shouldCreatePar2) {
+        _currentStep = 2;
+        _progress = 0.0;
+        _stepLabel = 'Creating recovery data ($redundancy%)...';
+        _statusMessage =
+            'Step 2 of $_totalSteps: Creating recovery data ($redundancy%)...';
+        notifyListeners();
+
+        final par2OutputDir = InputSelection.getParentDir(outputPath);
+        final par2CreateArgs = Par2Service.buildCreateArgs(
+          redundancy: redundancy,
+          archiveFileName: archiveBaseName,
+        );
+
+        logController.addLine(
+          '>>> [Step 2/$_totalSteps] Running PAR2 create: $par2Exe ${par2CreateArgs.join(' ')} (cwd: $par2OutputDir)',
+        );
+
+        final step2ExitCode = await _runStepProcess(
+          exe: par2Exe,
+          args: par2CreateArgs,
+          workingDir: par2OutputDir,
+          onProgress: (text) {
+            final percent = Par2Service.parseProgress(text);
+            if (percent != null) {
+              _progress = percent;
+              final pctInt = (percent * 100).toInt();
+              _statusMessage =
+                  'Step 2 of $_totalSteps: Creating recovery data ($redundancy%)... $pctInt%';
+              notifyListeners();
+            }
+          },
+        );
+
+        if (_cancelled) {
+          return;
+        }
+
+        if (step2ExitCode != 0) {
+          _cleanupPar2Files(outputPath);
+          final par2Error = Par2Service.mapExitCode(step2ExitCode);
+          _status = JobStatus.failure;
+          _progress = null;
+          _statusMessage = 'Recovery data creation failed.';
+          _lastResult = JobResult.failure(
+            format: format,
+            isEncrypted: encrypt,
+            exitCode: step2ExitCode,
+            errorMessage:
+                'PAR2 create failed (exit code $step2ExitCode): ${par2Error.errorMessage}\nThe archive was kept at $outputPath.',
+            outputPath: outputPath,
+            outputSizeBytes: archiveSize,
+            warnings: warnings,
+            recoveryNote:
+                'Archive was created, but recovery data creation failed.',
+          );
+          logController.addLine(
+            '>>> PAR2 create failed with exit code $step2ExitCode. Archive kept.',
+          );
+          notifyListeners();
+          return;
+        }
+
+        summary = _getPar2Summary(outputPath, archiveSize);
+        logController.addLine(
+          '>>> [Step 2/$_totalSteps] Recovery data created: ${summary.fileCount} files, ${summary.totalBytes} bytes (${summary.overheadPercent.toStringAsFixed(1)}% overhead)',
+        );
+
+        // STEP 3: Verify Recovery Data (Sanity check)
+        _currentStep = 3;
+        _progress = 0.0;
+        _stepLabel = 'Verifying recovery data...';
+        _statusMessage = 'Step 3 of $_totalSteps: Verifying recovery data...';
+        notifyListeners();
+
+        final par2VerifyArgs = Par2Service.buildVerifyArgs('$archiveBaseName.par2');
+
+        logController.addLine(
+          '>>> [Step 3/$_totalSteps] Running PAR2 verify: $par2Exe ${par2VerifyArgs.join(' ')} (cwd: $par2OutputDir)',
+        );
+
+        final step3ExitCode = await _runStepProcess(
+          exe: par2Exe,
+          args: par2VerifyArgs,
+          workingDir: par2OutputDir,
+          onProgress: (text) {
+            final percent = Par2Service.parseProgress(text);
+            if (percent != null) {
+              _progress = percent;
+              final pctInt = (percent * 100).toInt();
+              _statusMessage =
+                  'Step 3 of $_totalSteps: Verifying recovery data... $pctInt%';
+              notifyListeners();
+            }
+          },
+        );
+
+        if (_cancelled) {
+          return;
+        }
+
+        if (step3ExitCode != 0) {
+          // SPEC RULE: Step 3 failure -> KEEP everything, show warning
+          warnings.add('Recovery data could not be verified.');
+          logController.addLine(
+            '>>> WARNING: PAR2 verification post-check returned exit code $step3ExitCode. All files kept.',
+          );
+          par2Verified = false;
+        } else {
+          logController.addLine(
+            '>>> [Step 3/$_totalSteps] Verification check passed: All files verified OK.',
+          );
+          par2Verified = true;
+        }
+      }
+
+      // ==========================================
+      // STEP 4 (or Step 2): Check Archive with Password (if encrypted)
+      // ==========================================
+      if (encrypt) {
+        _currentStep = _totalSteps;
+        _progress = 0.0;
+        _stepLabel = 'Checking archive with password...';
+        _statusMessage =
+            'Step $_totalSteps of $_totalSteps: Checking archive with password...';
+        notifyListeners();
+
+        final testArgs = SevenZipService.buildTestArgs(outputPath);
+        final testStdinBytes = Uint8List.fromList(utf8.encode('$password\n'));
+
+        logController.addLine(
+          '>>> [Step $_totalSteps/$_totalSteps] Verifying encrypted archive: $sevenZipExe ${testArgs.join(' ')}',
+        );
+
+        final stepTestExitCode = await _runStepProcess(
+          exe: sevenZipExe,
+          args: testArgs,
+          workingDir: workingDir,
+          stdinData: testStdinBytes,
+          onProgress: (text) {
+            final percent = SevenZipService.parseProgress(text);
+            if (percent != null) {
+              _progress = (percent.clamp(0, 100)) / 100.0;
+              _statusMessage =
+                  'Step $_totalSteps of $_totalSteps: Checking archive with password... $percent%';
+              notifyListeners();
+            }
+          },
+        );
+
+        if (_cancelled) {
+          return;
+        }
+
+        if (stepTestExitCode != 0) {
+          // SPEC RULE: Step 4 failure -> KEEP everything, show warning
+          warnings.add(
+            'Archive test with password reported a warning or failed (exit code $stepTestExitCode).',
+          );
+          logController.addLine(
+            '>>> WARNING: Archive password check returned exit code $stepTestExitCode. All files kept.',
+          );
+          _finishSuccess(
+            format: format,
+            isEncrypted: true,
+            outputPath: outputPath,
+            outputSizeBytes: archiveSize,
+            warnings: warnings,
+            par2Summary: summary,
+            par2Verified: par2Verified,
+            recoveryNote:
+                'Archive and recovery files kept, but password check reported warnings.',
+          );
+          return;
+        }
+
+        logController.addLine(
+          '>>> [Step $_totalSteps/$_totalSteps] Encrypted archive check passed: Verified OK.',
+        );
+      }
+
       _finishSuccess(
         format: format,
-        outputPath: outputPath,
-        outputSizeBytes: archiveSize,
-        warnings: warnings,
-      );
-      return;
-    }
-
-    // ==========================================
-    // STEP 2: Create Recovery Data
-    // ==========================================
-    _currentStep = 2;
-    _progress = 0.0;
-    _stepLabel = 'Creating recovery data ($redundancy%)...';
-    _statusMessage =
-        'Step 2 of $_totalSteps: Creating recovery data ($redundancy%)...';
-    notifyListeners();
-
-    final par2OutputDir = InputSelection.getParentDir(outputPath);
-    final par2CreateArgs = Par2Service.buildCreateArgs(
-      redundancy: redundancy,
-      archiveFileName: archiveBaseName,
-    );
-
-    logController.addLine(
-      '>>> [Step 2/$_totalSteps] Running PAR2 create: $par2Exe ${par2CreateArgs.join(' ')} (cwd: $par2OutputDir)',
-    );
-
-    final step2ExitCode = await _runStepProcess(
-      exe: par2Exe,
-      args: par2CreateArgs,
-      workingDir: par2OutputDir,
-      onProgress: (text) {
-        final percent = Par2Service.parseProgress(text);
-        if (percent != null) {
-          _progress = percent;
-          final pctInt = (percent * 100).toInt();
-          _statusMessage =
-              'Step 2 of $_totalSteps: Creating recovery data ($redundancy%)... $pctInt%';
-          notifyListeners();
-        }
-      },
-    );
-
-    if (_cancelled) {
-      return;
-    }
-
-    if (step2ExitCode != 0) {
-      _cleanupPar2Files(outputPath);
-      final par2Error = Par2Service.mapExitCode(step2ExitCode);
-      _status = JobStatus.failure;
-      _progress = null;
-      _statusMessage = 'Recovery data creation failed.';
-      _lastResult = JobResult.failure(
-        format: format,
-        exitCode: step2ExitCode,
-        errorMessage:
-            'PAR2 create failed (exit code $step2ExitCode): ${par2Error.errorMessage}\nThe archive was kept at $outputPath.',
-        outputPath: outputPath,
-        outputSizeBytes: archiveSize,
-        warnings: warnings,
-        recoveryNote: 'Archive was created, but recovery data creation failed.',
-      );
-      logController.addLine(
-        '>>> PAR2 create failed with exit code $step2ExitCode. Archive kept.',
-      );
-      notifyListeners();
-      return;
-    }
-
-    final summary = _getPar2Summary(outputPath, archiveSize);
-    logController.addLine(
-      '>>> [Step 2/$_totalSteps] Recovery data created: ${summary.fileCount} files, ${summary.totalBytes} bytes (${summary.overheadPercent.toStringAsFixed(1)}% overhead)',
-    );
-
-    // ==========================================
-    // STEP 3: Verify Recovery Data (Sanity check)
-    // ==========================================
-    _currentStep = 3;
-    _progress = 0.0;
-    _stepLabel = 'Verifying recovery data...';
-    _statusMessage = 'Step 3 of $_totalSteps: Verifying recovery data...';
-    notifyListeners();
-
-    final par2VerifyArgs = Par2Service.buildVerifyArgs('$archiveBaseName.par2');
-
-    logController.addLine(
-      '>>> [Step 3/$_totalSteps] Running PAR2 verify: $par2Exe ${par2VerifyArgs.join(' ')} (cwd: $par2OutputDir)',
-    );
-
-    final step3ExitCode = await _runStepProcess(
-      exe: par2Exe,
-      args: par2VerifyArgs,
-      workingDir: par2OutputDir,
-      onProgress: (text) {
-        final percent = Par2Service.parseProgress(text);
-        if (percent != null) {
-          _progress = percent;
-          final pctInt = (percent * 100).toInt();
-          _statusMessage =
-              'Step 3 of $_totalSteps: Verifying recovery data... $pctInt%';
-          notifyListeners();
-        }
-      },
-    );
-
-    if (_cancelled) {
-      return;
-    }
-
-    if (step3ExitCode != 0) {
-      // SPEC RULE: Step 3 failure -> KEEP everything, show warning "Recovery data could not be verified"
-      warnings.add('Recovery data could not be verified.');
-      logController.addLine(
-        '>>> WARNING: PAR2 verification post-check returned exit code $step3ExitCode. All files kept.',
-      );
-      _finishSuccess(
-        format: format,
+        isEncrypted: encrypt,
         outputPath: outputPath,
         outputSizeBytes: archiveSize,
         warnings: warnings,
         par2Summary: summary,
-        par2Verified: false,
-        recoveryNote: 'Archive and recovery files kept, but verification returned warnings.',
+        par2Verified: par2Verified,
+        recoveryNote: par2Verified == false
+            ? 'Archive and recovery files kept, but verification returned warnings.'
+            : null,
       );
-      return;
+    } finally {
+      if (encrypt) {
+        logController.setRedactSecret(null);
+      }
     }
-
-    logController.addLine(
-      '>>> [Step 3/$_totalSteps] Verification check passed: All files verified OK.',
-    );
-
-    _finishSuccess(
-      format: format,
-      outputPath: outputPath,
-      outputSizeBytes: archiveSize,
-      warnings: warnings,
-      par2Summary: summary,
-      par2Verified: true,
-    );
   }
 
   /// Verifies a .par2 set and its protected files.
@@ -852,6 +958,7 @@ class JobController extends ChangeNotifier {
 
   void _finishSuccess({
     ArchiveFormat format = ArchiveFormat.sevenZip,
+    bool isEncrypted = false,
     required String outputPath,
     required int outputSizeBytes,
     required List<String> warnings,
@@ -866,6 +973,7 @@ class JobController extends ChangeNotifier {
     if (warnings.isNotEmpty) {
       _lastResult = JobResult.successWithWarnings(
         format: format,
+        isEncrypted: isEncrypted,
         outputPath: outputPath,
         outputSizeBytes: outputSizeBytes,
         warnings: warnings,
@@ -876,6 +984,7 @@ class JobController extends ChangeNotifier {
     } else {
       _lastResult = JobResult.success(
         format: format,
+        isEncrypted: isEncrypted,
         outputPath: outputPath,
         outputSizeBytes: outputSizeBytes,
         warnings: warnings,
