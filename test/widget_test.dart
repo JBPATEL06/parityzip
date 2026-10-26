@@ -259,8 +259,8 @@ void main() {
           findsOneWidget,
         );
 
-        // Switch is disabled
-        final switchWidget = tester.widget<Switch>(find.byType(Switch));
+        // Recovery switch is disabled
+        final switchWidget = tester.widget<Switch>(find.byType(Switch).first);
         expect(switchWidget.onChanged, isNull);
         expect(switchWidget.value, isFalse);
       },
@@ -288,15 +288,17 @@ void main() {
       expect(find.byType(Slider), findsOneWidget);
       expect(find.text('Redundancy: 10%'), findsOneWidget);
 
+      final recoverySwitch = find.byType(Switch).first;
+
       // Toggle switch OFF
-      await tester.tap(find.byType(Switch));
+      await tester.tap(recoverySwitch);
       await tester.pumpAndSettle();
 
       expect(find.byType(Slider), findsNothing);
       expect(find.text('Redundancy: 10%'), findsNothing);
 
       // Toggle switch back ON
-      await tester.tap(find.byType(Switch));
+      await tester.tap(recoverySwitch);
       await tester.pumpAndSettle();
 
       expect(find.byType(Slider), findsOneWidget);
@@ -470,5 +472,127 @@ void main() {
         expect(find.text('.7z'), findsOneWidget);
       },
     );
+
+    testWidgets('Encryption section UI, toggling, validation, and clearing', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1280, 1000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final locator = ToolLocator(
+        pathEnv: '/mock/bin',
+        isExecutableFile: (p) => true,
+      );
+      final fakeRunner = FakeProcessRunner();
+      final logController = LogController();
+      final jobController = JobController(
+        processRunner: fakeRunner,
+        logController: logController,
+      );
+
+      await tester.pumpWidget(
+        ParityZipApp(
+          toolLocator: locator,
+          processRunner: fakeRunner,
+          logController: logController,
+          jobController: jobController,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Encryption card is present, switch is off
+      expect(find.text('Encryption'), findsOneWidget);
+      expect(
+        find.text(
+          'Protect archive with AES-256 encryption and hide file names.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Password'), findsNothing);
+
+      // Find encryption switch (second switch on screen: first is recovery data, second is encryption)
+      final switches = find.byType(Switch);
+      expect(switches, findsNWidgets(2));
+      final encryptSwitch = switches.at(1);
+
+      // Turn on encryption
+      await tester.tap(encryptSwitch);
+      await tester.pumpAndSettle();
+
+      // Password fields, hint, AES-256 text, and checkbox appear
+      expect(find.text('Password'), findsOneWidget);
+      expect(find.text('Confirm password'), findsOneWidget);
+      expect(find.text('Minimum 8 characters'), findsOneWidget);
+      expect(find.text('File names are hidden too (AES-256)'), findsOneWidget);
+      expect(
+        find.text('I understand that a lost password cannot be recovered'),
+        findsOneWidget,
+      );
+
+      // Select ZIP format -> encryption switch should be disabled with explanation
+      await tester.tap(find.text('ZIP'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Encryption is available for 7z only.'), findsOneWidget);
+      // Fields are hidden when ZIP is active
+      expect(find.text('Minimum 8 characters'), findsNothing);
+
+      // Switch back to 7z -> encryption restored
+      await tester.tap(find.text('7z'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Minimum 8 characters'), findsOneWidget);
+      expect(find.text('File names are hidden too (AES-256)'), findsOneWidget);
+    });
+
+    testWidgets('ProgressCard shows Encrypted (AES-256) badge and note', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1280, 1000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final locator = ToolLocator(
+        pathEnv: '/mock/bin',
+        isExecutableFile: (p) => true,
+      );
+      final fakeRunner = FakeProcessRunner();
+      final logController = LogController();
+      final jobController = JobController(
+        processRunner: fakeRunner,
+        logController: logController,
+      );
+
+      // Simulate a completed encrypted job
+      jobController.setResultForTest(
+        const JobResult.success(
+          outputPath: '/tmp/test_enc.7z',
+          format: ArchiveFormat.sevenZip,
+          outputSizeBytes: 1024,
+          isEncrypted: true,
+        ),
+      );
+
+      await tester.pumpWidget(
+        ParityZipApp(
+          toolLocator: locator,
+          processRunner: fakeRunner,
+          logController: logController,
+          jobController: jobController,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Encrypted (AES-256)'), findsOneWidget);
+      expect(
+        find.text(
+          'Open it with 7-Zip or another tool that supports 7z with passwords.',
+        ),
+        findsOneWidget,
+      );
+    });
   });
 }

@@ -141,6 +141,33 @@ class ProgressCard extends StatelessWidget {
                 SelectableText('File: $path'),
                 const SizedBox(height: 4),
                 Text('Format: ${result.format.label}'),
+                if (result.isEncrypted) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.lock_outline,
+                        size: 16,
+                        color: colorScheme.primary,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Encrypted (AES-256)',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: colorScheme.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Open it with 7-Zip or another tool that supports 7z with passwords.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 4),
                 Text('Size: $sizeText'),
                 if (result.par2Summary != null) ...[

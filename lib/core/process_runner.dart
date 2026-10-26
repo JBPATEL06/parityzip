@@ -183,8 +183,9 @@ class FakeProcessRunner implements ProcessRunner {
     String? workingDirectory,
     Uint8List? stdinData,
   }) {
-    final capturedStdin =
-        stdinData != null ? Uint8List.fromList(stdinData) : null;
+    final capturedStdin = stdinData != null
+        ? Uint8List.fromList(stdinData)
+        : null;
     invocations.add(
       FakeProcessInvocation(
         exe: exe,

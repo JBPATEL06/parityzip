@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import '../core/compatibility_checker.dart';
 import '../core/input_selection.dart';
 import '../core/models.dart';
+import '../core/password_policy.dart';
 import '../services/par2_service.dart';
 import '../services/sevenzip_service.dart';
 import '../state/job_controller.dart';
@@ -50,11 +51,24 @@ class _ProtectPageState extends State<ProtectPage> {
   CompressionLevel _compressionLevel = CompressionLevel.normal;
   bool _createRecoveryData = true;
   double _redundancy = 10.0;
+  bool _encrypt = false;
+  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _confirmPasswordController =
+      TextEditingController();
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
+  bool _lostPasswordAcknowledged = false;
   bool _isDragging = false;
   bool _isScanning = false;
   JobStatus? _lastStatus;
   FeedbackMessage? _topFeedback;
   Timer? _feedbackTimer;
+
+  void _clearPasswordFields() {
+    _passwordController.clear();
+    _confirmPasswordController.clear();
+    _lostPasswordAcknowledged = false;
+  }
 
   void _showTopFeedback(
     FeedbackMessage message, {
@@ -89,6 +103,7 @@ class _ProtectPageState extends State<ProtectPage> {
 
     if (_lastStatus == JobStatus.running &&
         currentStatus != JobStatus.running) {
+      _clearPasswordFields();
       final result = jobController.lastResult;
       final cancelledNote = jobController.cancelledNote;
 
@@ -151,6 +166,8 @@ class _ProtectPageState extends State<ProtectPage> {
   void dispose() {
     _feedbackTimer?.cancel();
     _nameController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
   }
 
@@ -249,6 +266,8 @@ class _ProtectPageState extends State<ProtectPage> {
       }
     }
 
+    final isEncryptedActive = _encrypt && _format == ArchiveFormat.sevenZip;
+
     jobController.startProtectionPipeline(
       sevenZipExe: toolStatus.sevenZip.path!,
       par2Exe: toolStatus.par2.path,
@@ -257,6 +276,8 @@ class _ProtectPageState extends State<ProtectPage> {
       format: _format,
       createRecoveryData: _createRecoveryData && hasPar2,
       redundancy: _redundancy.round(),
+      encrypt: isEncryptedActive,
+      password: isEncryptedActive ? _passwordController.text : null,
     );
   }
 
@@ -536,10 +557,28 @@ class _ProtectPageState extends State<ProtectPage> {
       );
     }
 
-    final isOverallValid = validation.isValid && par2Validation.isValid;
+    final isEncryptedActive = _encrypt && _format == ArchiveFormat.sevenZip;
+    String? passwordError;
+    if (isEncryptedActive) {
+      final policyResult = PasswordPolicy.validate(
+        password: _passwordController.text,
+        confirmPassword: _confirmPasswordController.text,
+      );
+      if (!policyResult.isValid) {
+        passwordError = policyResult.errorMessage;
+      } else if (!_lostPasswordAcknowledged) {
+        passwordError =
+            'You must acknowledge that a lost password cannot be recovered.';
+      }
+    }
+
+    final isOverallValid =
+        validation.isValid && par2Validation.isValid && passwordError == null;
     final overallErrorMessage = !validation.isValid
         ? validation.errorMessage
-        : (!par2Validation.isValid ? par2Validation.errorMessage : null);
+        : (!par2Validation.isValid
+              ? par2Validation.errorMessage
+              : passwordError);
 
     final isOutputFromCurrentJob =
         lastSuccessPath != null &&
@@ -917,6 +956,177 @@ class _ProtectPageState extends State<ProtectPage> {
               ),
             ),
           ),
+          // 6. Encryption (M5)
+          Card(
+            margin: EdgeInsets.zero,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Encryption',
+                              style: theme.textTheme.titleSmall,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _format == ArchiveFormat.zip
+                                  ? 'Encryption is available for 7z only.'
+                                  : 'Protect archive with AES-256 encryption and hide file names.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: _format == ArchiveFormat.zip
+                                    ? colorScheme.error
+                                    : theme.textTheme.bodySmall?.color,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Switch(
+                        value: _encrypt && _format == ArchiveFormat.sevenZip,
+                        onChanged: isRunning || _format == ArchiveFormat.zip
+                            ? null
+                            : (val) {
+                                setState(() {
+                                  _encrypt = val;
+                                });
+                              },
+                      ),
+                    ],
+                  ),
+                  if (_encrypt && _format == ArchiveFormat.sevenZip) ...[
+                    const Divider(height: 24),
+                    TextField(
+                      controller: _passwordController,
+                      enabled: !isRunning,
+                      obscureText: _obscurePassword,
+                      onChanged: (_) => setState(() {}),
+                      decoration: InputDecoration(
+                        labelText: 'Password',
+                        helperText: 'Minimum 8 characters',
+                        border: const OutlineInputBorder(),
+                        isDense: true,
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _obscurePassword
+                                ? Icons.visibility_outlined
+                                : Icons.visibility_off_outlined,
+                            size: 20,
+                          ),
+                          tooltip: _obscurePassword
+                              ? 'Show password'
+                              : 'Hide password',
+                          onPressed: () {
+                            setState(() {
+                              _obscurePassword = !_obscurePassword;
+                            });
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _confirmPasswordController,
+                      enabled: !isRunning,
+                      obscureText: _obscureConfirmPassword,
+                      onChanged: (_) => setState(() {}),
+                      decoration: InputDecoration(
+                        labelText: 'Confirm password',
+                        border: const OutlineInputBorder(),
+                        isDense: true,
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _obscureConfirmPassword
+                                ? Icons.visibility_outlined
+                                : Icons.visibility_off_outlined,
+                            size: 20,
+                          ),
+                          tooltip: _obscureConfirmPassword
+                              ? 'Show password'
+                              : 'Hide password',
+                          onPressed: () {
+                            setState(() {
+                              _obscureConfirmPassword =
+                                  !_obscureConfirmPassword;
+                            });
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.lock_outline,
+                          size: 16,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'File names are hidden too (AES-256)',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    InkWell(
+                      onTap: isRunning
+                          ? null
+                          : () {
+                              setState(() {
+                                _lostPasswordAcknowledged =
+                                    !_lostPasswordAcknowledged;
+                              });
+                            },
+                      borderRadius: BorderRadius.circular(4),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              height: 24,
+                              width: 24,
+                              child: Checkbox(
+                                value: _lostPasswordAcknowledged,
+                                onChanged: isRunning
+                                    ? null
+                                    : (val) {
+                                        setState(() {
+                                          _lostPasswordAcknowledged =
+                                              val ?? false;
+                                        });
+                                      },
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'I understand that a lost password cannot be recovered',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
           const SizedBox(height: 16),
 
           // Validation / Error explanation / Success status hint
@@ -1010,7 +1220,7 @@ class _ProtectPageState extends State<ProtectPage> {
             ),
           ],
 
-          // 6. Primary Action Button
+          // 7. Primary Action Button
           FilledButton.icon(
             icon: const Icon(Icons.archive),
             label: Text(_isScanning ? 'Checking names...' : 'Create archive'),
@@ -1025,16 +1235,17 @@ class _ProtectPageState extends State<ProtectPage> {
           ),
           const SizedBox(height: 16),
 
-          // 7. Progress & Results
+          // 8. Progress & Results
           ProgressCard(
             onCreateAnother: () {
               _suggestNextName();
+              _clearPasswordFields();
               jobController.clearStatus();
             },
           ),
           const SizedBox(height: 16),
 
-          // 8. Log Panel
+          // 9. Log Panel
           const LogPanel(),
         ],
       ),

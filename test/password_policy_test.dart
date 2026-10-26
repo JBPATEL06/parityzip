@@ -4,10 +4,7 @@ import 'package:parityzip/core/password_policy.dart';
 void main() {
   group('PasswordPolicy', () {
     test('rejects empty password', () {
-      final result = PasswordPolicy.validate(
-        password: '',
-        confirmPassword: '',
-      );
+      final result = PasswordPolicy.validate(password: '', confirmPassword: '');
       expect(result.isValid, isFalse);
       expect(result.errorMessage, equals('Password cannot be empty.'));
     });
@@ -67,25 +64,28 @@ void main() {
       expect(result.errorMessage, equals('Passwords do not match.'));
     });
 
-    test('accepts valid passwords (minimum 8 chars, unicode, symbols, long)', () {
-      final result1 = PasswordPolicy.validate(
-        password: '12345678',
-        confirmPassword: '12345678',
-      );
-      expect(result1.isValid, isTrue);
-      expect(result1.errorMessage, isNull);
+    test(
+      'accepts valid passwords (minimum 8 chars, unicode, symbols, long)',
+      () {
+        final result1 = PasswordPolicy.validate(
+          password: '12345678',
+          confirmPassword: '12345678',
+        );
+        expect(result1.isValid, isTrue);
+        expect(result1.errorMessage, isNull);
 
-      final resultUnicode = PasswordPolicy.validate(
-        password: 'Tést Pass ફા 123!',
-        confirmPassword: 'Tést Pass ફા 123!',
-      );
-      expect(resultUnicode.isValid, isTrue);
+        final resultUnicode = PasswordPolicy.validate(
+          password: 'Tést Pass ફા 123!',
+          confirmPassword: 'Tést Pass ફા 123!',
+        );
+        expect(resultUnicode.isValid, isTrue);
 
-      final resultLong = PasswordPolicy.validate(
-        password: 'A' * 200,
-        confirmPassword: 'A' * 200,
-      );
-      expect(resultLong.isValid, isTrue);
-    });
+        final resultLong = PasswordPolicy.validate(
+          password: 'A' * 200,
+          confirmPassword: 'A' * 200,
+        );
+        expect(resultLong.isValid, isTrue);
+      },
+    );
   });
 }

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
@@ -171,6 +170,14 @@ class JobController extends ChangeNotifier {
     _lastVerifyResult = null;
     _lastRepairResult = null;
     _createdOutputFile = null;
+    notifyListeners();
+  }
+
+  @visibleForTesting
+  void setResultForTest(JobResult result) {
+    _status = result.isSuccess ? JobStatus.success : JobStatus.failure;
+    _lastResult = result;
+    _currentJobType = JobType.protect;
     notifyListeners();
   }
 
@@ -426,7 +433,9 @@ class JobController extends ChangeNotifier {
         _statusMessage = 'Step 3 of $_totalSteps: Verifying recovery data...';
         notifyListeners();
 
-        final par2VerifyArgs = Par2Service.buildVerifyArgs('$archiveBaseName.par2');
+        final par2VerifyArgs = Par2Service.buildVerifyArgs(
+          '$archiveBaseName.par2',
+        );
 
         logController.addLine(
           '>>> [Step 3/$_totalSteps] Running PAR2 verify: $par2Exe ${par2VerifyArgs.join(' ')} (cwd: $par2OutputDir)',
@@ -521,8 +530,7 @@ class JobController extends ChangeNotifier {
             warnings: warnings,
             par2Summary: summary,
             par2Verified: par2Verified,
-            recoveryNote:
-                'Archive and recovery files kept, but password check reported warnings.',
+            recoveryNote: 'Archive and recovery files kept, but password check reported warnings.',
           );
           return;
         }

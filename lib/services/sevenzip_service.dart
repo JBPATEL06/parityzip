@@ -53,11 +53,7 @@ class SevenZipService {
   }
 
   static List<String> buildTestArgs(String archiveFilePath) {
-    return [
-      't',
-      '-bsp1',
-      archiveFilePath,
-    ];
+    return ['t', '-bsp1', archiveFilePath];
   }
 
   static int? parseProgress(String text) {

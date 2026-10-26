@@ -4,9 +4,7 @@ class PasswordValidationResult {
   final bool isValid;
   final String? errorMessage;
 
-  const PasswordValidationResult.valid()
-      : isValid = true,
-        errorMessage = null;
+  const PasswordValidationResult.valid() : isValid = true, errorMessage = null;
 
   const PasswordValidationResult.invalid(this.errorMessage) : isValid = false;
 
@@ -55,9 +53,7 @@ class PasswordPolicy {
       );
     }
     if (password != confirmPassword) {
-      return const PasswordValidationResult.invalid(
-        'Passwords do not match.',
-      );
+      return const PasswordValidationResult.invalid('Passwords do not match.');
     }
     return const PasswordValidationResult.valid();
   }
