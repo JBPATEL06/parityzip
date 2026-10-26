@@ -67,7 +67,7 @@ _log "Starting ParityZip uninstallation..."
 _log "Checking executable symlink..."
 if [ -L "${BIN_LINK}" ]; then
   link_target="$(readlink -f "${BIN_LINK}" || true)"
-  if [[ "${link_target}" == "${INSTALL_DIR}"* ]]; then
+  if [[ "${link_target}" == "${INSTALL_DIR}/"* ]]; then
     _remove_file "${BIN_LINK}"
   else
     echo "    Notice: ${BIN_LINK} points elsewhere (${link_target}), skipping."

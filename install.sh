@@ -170,7 +170,15 @@ ARCHIVE_FILENAME="parityzip-${PARITYZIP_VERSION}-linux-x64.tar.gz"
 SHA_FILENAME="${ARCHIVE_FILENAME}.sha256"
 
 WORK_DIR="$(mktemp -d "/tmp/parityzip_install.XXXXXX")"
-trap 'rm -rf "${WORK_DIR}"' EXIT
+TEMP_INSTALL=""
+
+_cleanup() {
+  rm -rf "${WORK_DIR}"
+  if [ -n "${TEMP_INSTALL:-}" ] && [ -d "${TEMP_INSTALL}" ]; then
+    rm -rf "${TEMP_INSTALL}"
+  fi
+}
+trap _cleanup EXIT
 
 TARBALL_PATH="${WORK_DIR}/${ARCHIVE_FILENAME}"
 SHA_PATH="${WORK_DIR}/${SHA_FILENAME}"
@@ -271,6 +279,7 @@ if [ -d "${INSTALL_DIR}" ]; then
   fi
 fi
 mv "${TEMP_INSTALL}" "${INSTALL_DIR}"
+TEMP_INSTALL=""
 
 # ------------------------------------------------------------------------------
 # 6. Install Executable Symlink
@@ -279,7 +288,7 @@ _log "Creating executable symlink in ${BIN_DIR}..."
 mkdir -p "${BIN_DIR}"
 if [ -L "${BIN_LINK}" ]; then
   link_target="$(readlink -f "${BIN_LINK}" || true)"
-  if [[ "${link_target}" == "${INSTALL_DIR}"* ]]; then
+  if [[ "${link_target}" == "${INSTALL_DIR}/"* ]]; then
     rm -f "${BIN_LINK}"
     ln -sf "${INSTALL_DIR}/parityzip" "${BIN_LINK}"
   else

@@ -108,6 +108,7 @@ ParityZip does **not** embed recovery data inside the archive file. Instead, it 
 ## Honest Limitations & Testing Status
 
 - **Tested Platform:** Tested on **Ubuntu 26.04** only. Every other Linux distribution or release (including Ubuntu 22.04 LTS, Ubuntu 24.04 LTS, Debian, Fedora, Arch) is currently **untested**.
+- **Helper Tool Installation:** Automatic installation of 7z and par2 is untested. Users are recommended to verify or install `7zip`/`p7zip-full` and `par2`/`par2cmdline` manually via their system package manager.
 - **ZIP on Windows / macOS Untested:** Cross-platform warning heuristics check for common Windows-incompatible filenames and symlinks in ZIP archives; extraction behavior on Windows and macOS is **untested** by the maintainer.
 - **Package Managers Untested:** Package manager support for Fedora (`dnf`) and Arch Linux (`pacman`) is implemented based on upstream documentation and is **untested**.
 - **Separate Parity Files:** Recovery data is stored in separate `.par2` files next to the archive, not embedded into the `.7z` container itself.
