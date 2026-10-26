@@ -52,11 +52,13 @@ static void my_application_activate(GApplication* application) {
     gtk_window_set_title(window, "ParityZip");
   }
 
-  // Set window icon if available
+  // Set window icon name and fallback icon file
+  gtk_window_set_default_icon_name(APPLICATION_ID);
+  gtk_window_set_icon_name(window, APPLICATION_ID);
+
   const gchar* icon_paths[] = {
       "data/flutter_assets/assets/app_icon_256.png",
       "assets/app_icon_256.png",
-      "/home/jeel/Desktop/Projects/par2with7z/assets/app_icon_256.png",
       nullptr};
   for (int i = 0; icon_paths[i] != nullptr; i++) {
     if (g_file_test(icon_paths[i], G_FILE_TEST_EXISTS)) {
